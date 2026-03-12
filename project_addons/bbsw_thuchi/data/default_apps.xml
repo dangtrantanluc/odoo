@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="home_app_thuchi" model="bbsw.home.app">
+        <field name="name">Thu Chi</field>
+        <field name="url">/project/thuchi</field>
+        <field name="icon">money</field>
+        <field name="gradient">grad-emerald</field>
+        <field name="sequence">10</field>
+    </record>
+
+    <record id="home_app_nhansu" model="bbsw.home.app">
+        <field name="name">Nhân Sự</field>
+        <field name="url">/odoo/employees</field>
+        <field name="icon">users</field>
+        <field name="gradient">grad-indigo</field>
+        <field name="sequence">20</field>
+    </record>
+
+    <record id="home_app_chamcong" model="bbsw.home.app">
+        <field name="name">Chấm Công</field>
+        <field name="url">/odoo/attendances</field>
+        <field name="icon">clock</field>
+        <field name="gradient">grad-orange</field>
+        <field name="sequence">30</field>
+    </record>
+
+    <record id="home_app_luong" model="bbsw.home.app">
+        <field name="name">Tính Lương</field>
+        <field name="url">/odoo/payroll</field>
+        <field name="icon">payroll</field>
+        <field name="gradient">grad-pink</field>
+        <field name="sequence">40</field>
+    </record>
+
+    <record id="home_app_thaoluan" model="bbsw.home.app">
+        <field name="name">Thảo Luận</field>
+        <field name="url">/odoo/discuss</field>
+        <field name="icon">chat</field>
+        <field name="gradient">grad-purple</field>
+        <field name="sequence">50</field>
+    </record>
+
+    <record id="home_app_lich" model="bbsw.home.app">
+        <field name="name">Lịch</field>
+        <field name="url">/odoo/calendar</field>
+        <field name="icon">calendar</field>
+        <field name="gradient">grad-blue</field>
+        <field name="sequence">60</field>
+    </record>
+
+    <record id="home_app_crm" model="bbsw.home.app">
+        <field name="name">CRM</field>
+        <field name="url">/odoo/crm</field>
+        <field name="icon">crm</field>
+        <field name="gradient">grad-rose</field>
+        <field name="sequence">70</field>
+    </record>
+
+    <record id="home_app_banhang" model="bbsw.home.app">
+        <field name="name">Bán Hàng</field>
+        <field name="url">/odoo/sales</field>
+        <field name="icon">sales</field>
+        <field name="gradient">grad-cyan</field>
+        <field name="sequence">80</field>
+    </record>
+
+    <record id="home_app_duan" model="bbsw.home.app">
+        <field name="name">Dự Án</field>
+        <field name="url">/odoo/project</field>
+        <field name="icon">project</field>
+        <field name="gradient">grad-teal</field>
+        <field name="sequence">90</field>
+    </record>
+
+    <record id="home_app_caidat" model="bbsw.home.app">
+        <field name="name">Cài Đặt</field>
+        <field name="url">/odoo/settings</field>
+        <field name="icon">settings</field>
+        <field name="gradient">grad-slate</field>
+        <field name="sequence">100</field>
+    </record>
+
+</odoo>

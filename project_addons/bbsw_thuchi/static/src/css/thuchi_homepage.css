@@ -1,0 +1,304 @@
+/* ═══════════════════════════════════════════════
+   BBSW Homepage — Clean Launcher Style
+   ═══════════════════════════════════════════════ */
+
+:root {
+    --bg:           #ffffff;
+    --border:       #e5e7eb;
+    --text-1:       #111827;
+    --text-2:       #6b7280;
+    --text-3:       #9ca3af;
+    --shadow-sm:    0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md:    0 4px 16px rgba(0,0,0,0.10);
+    --shadow-lg:    0 12px 32px rgba(0,0,0,0.12);
+    --icon-size:    80px;
+    --icon-radius:  20px;
+    --accent:       #4f46e5;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ── Root wrap ── */
+.hp-wrap {
+    min-height: 100vh;
+    background: var(--bg);
+    font-family: -apple-system, 'Inter', system-ui, sans-serif;
+    color: var(--text-1);
+    position: relative;
+}
+
+/* ── Floating user bar (top-right) ── */
+.hp-user-bar {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    z-index: 200;
+}
+
+.hp-user-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 5px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    text-decoration: none;
+    color: var(--text-1);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: box-shadow 0.15s, background 0.15s;
+}
+
+.hp-user-btn:hover {
+    box-shadow: var(--shadow-md);
+    background: #fafafa;
+    color: var(--text-1);
+}
+
+.hp-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.hp-name { font-size: 0.8rem; }
+
+.hp-chevron {
+    color: var(--text-3);
+    transition: transform 0.2s;
+}
+
+.hp-user-btn[aria-expanded="true"] .hp-chevron {
+    transform: rotate(180deg);
+}
+
+/* ── Dropdown ── */
+.hp-dropdown {
+    min-width: 200px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    padding: 6px;
+    margin-top: 6px;
+    background: #fff;
+}
+
+.hp-dd-header {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 10px 6px;
+    gap: 2px;
+}
+
+.hp-dd-header strong { font-size: 0.875rem; }
+.hp-dd-header small  { font-size: 0.75rem; color: var(--text-3); }
+
+.hp-dropdown .dropdown-divider { margin: 4px 0; border-color: var(--border); }
+
+.hp-dropdown .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    color: var(--text-1);
+    transition: background 0.12s;
+}
+
+.hp-dropdown .dropdown-item:hover         { background: #f3f4f6; }
+.hp-dropdown .dropdown-item.text-danger   { color: #ef4444; }
+.hp-dropdown .dropdown-item.text-danger:hover { background: #fef2f2; }
+
+/* ── Main area ── */
+.hp-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 80px 24px 60px;
+}
+
+.hp-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 36px;
+    width: 100%;
+    max-width: 860px;
+}
+
+/* ── Brand / Logo ── */
+.hp-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--text-1);
+}
+
+.hp-brand-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--accent);
+}
+
+/* ── Search ── */
+.hp-search-wrap {
+    width: 100%;
+    max-width: 380px;
+}
+
+.hp-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 12px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.hp-search:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79,70,229,0.10);
+}
+
+.hp-search-icon { width: 16px; height: 16px; color: var(--text-3); flex-shrink: 0; }
+
+.hp-search input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 0.875rem;
+    color: var(--text-1);
+    background: transparent;
+    font-family: inherit;
+}
+
+.hp-search input::placeholder { color: var(--text-3); }
+
+.hp-search-kbd {
+    font-size: 0.7rem;
+    color: var(--text-3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: inherit;
+    background: #f9fafb;
+    flex-shrink: 0;
+}
+
+/* ── App Grid ── */
+.hp-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    width: 100%;
+}
+
+@media (max-width: 700px)  { .hp-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 480px)  {
+    .hp-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    :root { --icon-size: 64px; --icon-radius: 16px; }
+}
+
+/* ── App tile ── */
+.hp-app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 8px 14px;
+    border-radius: 16px;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.hp-app:hover {
+    background: #f3f4f6;
+    color: inherit;
+}
+
+.hp-app:active { background: #e9eaed; }
+
+/* ── Icon tile ── */
+.hp-icon {
+    width: var(--icon-size);
+    height: var(--icon-size);
+    border-radius: var(--icon-radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s;
+}
+
+.hp-app:hover .hp-icon {
+    transform: translateY(-3px) scale(1.04);
+    box-shadow: var(--shadow-md);
+}
+
+.hp-icon svg {
+    width: 36px;
+    height: 36px;
+    stroke-width: 1.75;
+}
+
+/* ── Label ── */
+.hp-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-align: center;
+    color: var(--text-2);
+    line-height: 1.3;
+    max-width: calc(var(--icon-size) + 20px);
+    word-break: break-word;
+    transition: color 0.15s;
+}
+
+.hp-app:hover .hp-label { color: var(--text-1); }
+
+/* ── No results ── */
+.hp-no-results {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 48px 0;
+    color: var(--text-3);
+}
+
+.hp-no-results svg { width: 40px; height: 40px; }
+.hp-no-results p   { margin: 0; font-size: 0.875rem; }
+
+/* ── Hidden ── */
+.hp-app.hidden { display: none; }
+
+/* ══════════════════════════════════════════
+   Icon colors — pastel background + colored stroke
+   ══════════════════════════════════════════ */
+.grad-emerald { background: #d1fae5; color: #059669; }
+.grad-indigo  { background: #e0e7ff; color: #4338ca; }
+.grad-orange  { background: #ffedd5; color: #ea580c; }
+.grad-pink    { background: #fce7f3; color: #be185d; }
+.grad-purple  { background: #f3e8ff; color: #7c3aed; }
+.grad-blue    { background: #dbeafe; color: #1d4ed8; }
+.grad-cyan    { background: #cffafe; color: #0891b2; }
+.grad-rose    { background: #ffe4e6; color: #e11d48; }
+.grad-teal    { background: #ccfbf1; color: #0f766e; }
+.grad-slate   { background: #f1f5f9; color: #475569; }
+.grad-amber   { background: #fef3c7; color: #d97706; }
+.grad-green   { background: #dcfce7; color: #15803d; }
