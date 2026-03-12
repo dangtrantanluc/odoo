@@ -1,0 +1,198 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* bb_project_management
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 17.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-03-12 00:00+0000\n"
+"PO-Revision-Date: 2026-03-12 00:00+0000\n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"Language: vi_VN\n"
+
+#. module: bb_project_management
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_root
+msgid "BB Project"
+msgstr "Quản lý Dự án BB"
+
+#. module: bb_project_management
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_dashboard
+#: model:ir.actions.client,name:bb_project_management.action_bb_project_dashboard
+msgid "Dashboard"
+msgstr "Bảng điều khiển"
+
+#. module: bb_project_management
+#: model:ir.actions.act_window,name:bb_project_management.action_bb_project
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_main
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_all
+msgid "Projects"
+msgstr "Dự án"
+
+#. module: bb_project_management
+#: model:ir.actions.act_window,name:bb_project_management.action_bb_project_my
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_my
+msgid "My Projects"
+msgstr "Dự án của tôi"
+
+#. module: bb_project_management
+#: model:ir.actions.act_window,name:bb_project_management.action_bb_project_task
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_task_all
+msgid "All Tasks"
+msgstr "Tất cả công việc"
+
+#. module: bb_project_management
+#: model:ir.actions.act_window,name:bb_project_management.action_bb_project_task_my
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_task_my
+msgid "My Tasks"
+msgstr "Công việc của tôi"
+
+#. module: bb_project_management
+#: model:ir.actions.act_window,name:bb_project_management.action_bb_project_backlog
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_backlog_all
+msgid "All Work Logs"
+msgstr "Tất cả Nhật ký báo cáo"
+
+#. module: bb_project_management
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_config
+msgid "Configuration"
+msgstr "Cấu hình"
+
+#. module: bb_project_management
+#: model:ir.actions.act_window,name:bb_project_management.action_bb_project_tag
+#: model:ir.ui.menu,name:bb_project_management.menu_bb_project_tag
+msgid "Tags"
+msgstr "Thẻ phân loại"
+
+#. module: bb_project_management
+#: model:ir.actions.act_window,name:bb_project_management.action_bb_project_member
+msgid "Team Members"
+msgstr "Thành viên nhóm"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__name
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_task__name
+msgid "Title"
+msgstr "Tiêu đề"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__code
+msgid "Project Code"
+msgstr "Mã dự án"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__owner_id
+msgid "Project Owner"
+msgstr "Chủ dự án"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__customer_id
+msgid "Customer"
+msgstr "Khách hàng"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__status
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_task__status
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_backlog__status
+msgid "Status"
+msgstr "Trạng thái"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__budget
+msgid "Budget"
+msgstr "Ngân sách"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__total_cost
+msgid "Total Cost (Approved)"
+msgstr "Tổng chi phí (Đã duyệt)"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project__budget_remaining
+msgid "Remaining Budget"
+msgstr "Ngân sách còn lại"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_task__assignee_id
+msgid "Assignee"
+msgstr "Người phụ trách"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_backlog__hours
+msgid "Hours"
+msgstr "Số giờ"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_backlog__work_date
+msgid "Work Date"
+msgstr "Ngày làm việc"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_backlog__user_id
+msgid "Logged By"
+msgstr "Người ghi nhận"
+
+#. module: bb_project_management
+#: model:ir.model.fields,field_description:bb_project_management.field_bb_project_member_rate__cost_per_hour
+msgid "Cost / Hour"
+msgstr "Chi phí / Giờ"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project__status__planned
+msgid "Planned"
+msgstr "Theo kế hoạch"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project__status__in_progress
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project_task__status__in_progress
+msgid "In Progress"
+msgstr "Đang tiến hành"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project__status__on_hold
+msgid "On Hold"
+msgstr "Tạm ngưng"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project__status__completed
+msgid "Completed"
+msgstr "Đã hoàn thành"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project__status__cancelled
+msgid "Cancelled"
+msgstr "Đã hủy"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project_task__status__todo
+msgid "To Do"
+msgstr "Cần làm"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project_task__status__review
+msgid "Review"
+msgstr "Đang kiểm tra"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project_task__status__done
+msgid "Done"
+msgstr "Hoàn thành"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project_backlog__status__pending
+msgid "Pending"
+msgstr "Chờ duyệt"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project_backlog__status__approved
+msgid "Approved"
+msgstr "Đã duyệt"
+
+#. module: bb_project_management
+#: model:ir.model.fields.selection,name:bb_project_management.selection__bb_project_backlog__status__rejected
+msgid "Rejected"
+msgstr "Từ chối"

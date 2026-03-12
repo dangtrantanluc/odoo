@@ -1,0 +1,10 @@
+# -*- coding: utf-8 -*-
+from . import (
+    bb_project_tag,
+    bb_project_milestone,
+    bb_project_member,
+    bb_project_member_rate,
+    bb_project_backlog,
+    bb_project_task,
+    bb_project,
+)

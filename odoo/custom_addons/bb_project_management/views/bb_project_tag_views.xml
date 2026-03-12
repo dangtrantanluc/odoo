@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Tag List -->
+    <record id="view_bb_project_tag_list" model="ir.ui.view">
+        <field name="name">bb.project.tag.tree</field>
+        <field name="model">bb.project.tag</field>
+        <field name="arch" type="xml">
+            <tree string="Tags" editable="bottom">
+                <field name="name"/>
+                <field name="color" widget="color_picker"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Tag Form -->
+    <record id="view_bb_project_tag_form" model="ir.ui.view">
+        <field name="name">bb.project.tag.form</field>
+        <field name="model">bb.project.tag</field>
+        <field name="arch" type="xml">
+            <form string="Tag">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="color" widget="color_picker"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Tag Action -->
+    <record id="action_bb_project_tag" model="ir.actions.act_window">
+        <field name="name">Tags</field>
+        <field name="res_model">bb.project.tag</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+</odoo>

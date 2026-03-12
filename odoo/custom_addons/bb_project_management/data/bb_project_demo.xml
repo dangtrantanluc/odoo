@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- ── Demo Company and User for Multi-Company Testing ── -->
+        <record id="company_subsidiary" model="res.company">
+            <field name="name">BlueBolt Subsidiary</field>
+        </record>
+        
+        <record id="user_sub_manager" model="res.users">
+            <field name="name">Sub Manager</field>
+            <field name="login">manager2</field>
+            <field name="password">manager2</field>
+            <field name="company_ids" eval="[(4, ref('company_subsidiary'))]"/>
+            <field name="company_id" ref="company_subsidiary"/>
+            <field name="groups_id" eval="[(6, 0, [ref('base.group_user'), ref('bb_project_management.group_bb_pm_manager')])]"/>
+        </record>
+
+        <!-- ── Mock Customers ────────────────────────────────── -->
+        <record id="customer_acme" model="res.partner">
+            <field name="name">Acme Corp</field>
+            <field name="is_company">True</field>
+            <field name="email">contact@acme.example.com</field>
+        </record>
+        <record id="customer_globex" model="res.partner">
+            <field name="name">Globex Corporation</field>
+            <field name="is_company">True</field>
+            <field name="email">info@globex.example.com</field>
+        </record>
+
+        <!-- ── Tags ──────────────────────────────────── -->
+        <record id="tag_backend" model="bb.project.tag">
+            <field name="name">Backend</field>
+            <field name="color">1</field>
+        </record>
+        <record id="tag_frontend" model="bb.project.tag">
+            <field name="name">Frontend</field>
+            <field name="color">4</field>
+        </record>
+        <record id="tag_devops" model="bb.project.tag">
+            <field name="name">DevOps</field>
+            <field name="color">6</field>
+        </record>
+        <record id="tag_design" model="bb.project.tag">
+            <field name="name">Design</field>
+            <field name="color">9</field>
+        </record>
+        <record id="tag_bug" model="bb.project.tag">
+            <field name="name">Bug</field>
+            <field name="color">2</field>
+        </record>
+
+        <!-- ── Project 1: AI Chatbot Platform ──────── -->
+        <record id="project_ai_chatbot" model="bb.project">
+            <field name="name">AI Chatbot Platform</field>
+            <field name="code">ACP-001</field>
+            <field name="owner_id" ref="base.user_admin"/>
+            <field name="customer_id" ref="customer_acme"/>
+            <field name="status">in_progress</field>
+            <field name="priority">high</field>
+            <field name="start_date">2026-01-01</field>
+            <field name="end_date">2026-06-30</field>
+            <field name="budget">150000.00</field>
+            <field name="description">&lt;p&gt;Develop an enterprise AI chatbot platform with NLP capabilities for BlueBolt customers.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend')), (4, ref('tag_frontend'))]"/>
+        </record>
+
+        <!-- Milestones for Project 1 -->
+        <record id="milestone_ai_mvp" model="bb.project.milestone">
+            <field name="name">MVP Launch</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="deadline">2026-03-31</field>
+            <field name="is_done">False</field>
+        </record>
+        <record id="milestone_ai_v1" model="bb.project.milestone">
+            <field name="name">V1.0 Release</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="deadline">2026-06-30</field>
+            <field name="is_done">False</field>
+        </record>
+
+        <!-- Members for Project 1 -->
+        <record id="member_ai_admin" model="bb.project.member">
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="user_id" ref="base.user_admin"/>
+            <field name="role">PM</field>
+        </record>
+
+        <!-- Tasks for Project 1 -->
+        <record id="task_ai_nlp" model="bb.project.task">
+            <field name="name">Design NLP Architecture</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="assignee_id" ref="base.user_admin"/>
+            <field name="status">review</field>
+            <field name="priority">high</field>
+            <field name="deadline">2026-03-15</field>
+            <field name="milestone_id" ref="milestone_ai_mvp"/>
+            <field name="description">&lt;p&gt;Design the natural language processing architecture for the chatbot.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+        <record id="task_ai_ui" model="bb.project.task">
+            <field name="name">Build Chat UI</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="assignee_id" ref="base.user_admin"/>
+            <field name="status">in_progress</field>
+            <field name="priority">medium</field>
+            <field name="deadline">2026-03-25</field>
+            <field name="milestone_id" ref="milestone_ai_mvp"/>
+            <field name="tag_ids" eval="[(4, ref('tag_frontend'))]"/>
+        </record>
+        <record id="task_ai_deploy" model="bb.project.task">
+            <field name="name">CI/CD Pipeline Setup</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="assignee_id" ref="base.user_admin"/>
+            <field name="status">todo</field>
+            <field name="priority">medium</field>
+            <field name="deadline">2026-04-01</field>
+            <field name="tag_ids" eval="[(4, ref('tag_devops'))]"/>
+        </record>
+
+        <!-- ── Project 2: Mobile App Redesign ───────── -->
+        <record id="project_mobile" model="bb.project">
+            <field name="name">Mobile App Redesign</field>
+            <field name="code">MAR-002</field>
+            <field name="owner_id" ref="base.user_admin"/>
+            <field name="customer_id" ref="customer_globex"/>
+            <field name="status">in_progress</field>
+            <field name="priority">critical</field>
+            <field name="start_date">2025-11-01</field>
+            <field name="end_date">2026-03-31</field>
+            <field name="budget">120000.00</field>
+            <field name="description">&lt;p&gt;Complete redesign of the mobile application with new UX/UI guidelines.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('tag_design')), (4, ref('tag_frontend'))]"/>
+        </record>
+
+        <record id="member_mobile_admin" model="bb.project.member">
+            <field name="project_id" ref="project_mobile"/>
+            <field name="user_id" ref="base.user_admin"/>
+            <field name="role">LEAD</field>
+        </record>
+
+        <record id="task_mobile_ux" model="bb.project.task">
+            <field name="name">UX Research &amp; Wireframes</field>
+            <field name="project_id" ref="project_mobile"/>
+            <field name="assignee_id" ref="base.user_admin"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="result">Completed 20 user interviews and created full wireframe set.</field>
+            <field name="tag_ids" eval="[(4, ref('tag_design'))]"/>
+        </record>
+        <record id="task_mobile_home" model="bb.project.task">
+            <field name="name">Implement Home Screen</field>
+            <field name="project_id" ref="project_mobile"/>
+            <field name="assignee_id" ref="base.user_admin"/>
+            <field name="status">in_progress</field>
+            <field name="priority">high</field>
+            <field name="tag_ids" eval="[(4, ref('tag_frontend'))]"/>
+        </record>
+
+        <!-- ── Project 3: Data Analytics Dashboard ──── -->
+        <record id="project_analytics" model="bb.project">
+            <field name="name">Data Analytics Dashboard</field>
+            <field name="code">DAD-003</field>
+            <field name="owner_id" ref="base.user_admin"/>
+            <field name="status">on_hold</field>
+            <field name="priority">medium</field>
+            <field name="start_date">2026-02-01</field>
+            <field name="end_date">2026-05-31</field>
+            <field name="budget">80000.00</field>
+            <field name="description">&lt;p&gt;Build a real-time data analytics dashboard for business intelligence.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+
+        <record id="task_analytics_schema" model="bb.project.task">
+            <field name="name">Database Schema Design</field>
+            <field name="project_id" ref="project_analytics"/>
+            <field name="assignee_id" ref="base.user_admin"/>
+            <field name="status">todo</field>
+            <field name="priority">high</field>
+            <field name="issues">Waiting for data team to confirm source systems.</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+
+        <!-- Work Logs (backlogs) — approved and pending -->
+        <record id="backlog_ai_nlp_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_ai_nlp"/>
+            <field name="user_id" ref="base.user_admin"/>
+            <field name="work_date">2026-01-15</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">75.00</field>
+            <field name="description">Initial architecture design and documentation</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="backlog_ai_nlp_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_ai_nlp"/>
+            <field name="user_id" ref="base.user_admin"/>
+            <field name="work_date">2026-01-16</field>
+            <field name="hours">6.5</field>
+            <field name="cost_per_hour_snapshot">75.00</field>
+            <field name="description">Refined architecture based on team feedback</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="backlog_ai_ui_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_ai_ui"/>
+            <field name="user_id" ref="base.user_admin"/>
+            <field name="work_date">2026-02-10</field>
+            <field name="hours">7.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Built chat component framework</field>
+            <field name="status">pending</field>
+        </record>
+        <record id="backlog_mobile_home_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_mobile_home"/>
+            <field name="user_id" ref="base.user_admin"/>
+            <field name="work_date">2026-02-05</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">40.00</field>
+            <field name="description">Implemented home screen layout</field>
+            <field name="status">approved</field>
+        </record>
+
+    </data>
+</odoo>

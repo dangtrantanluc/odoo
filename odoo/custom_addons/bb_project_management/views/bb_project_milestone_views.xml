@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Milestone List -->
+    <record id="view_bb_project_milestone_list" model="ir.ui.view">
+        <field name="name">bb.project.milestone.tree</field>
+        <field name="model">bb.project.milestone</field>
+        <field name="arch" type="xml">
+            <tree string="Milestones" editable="bottom" multi_edit="1" decoration-success="is_done" decoration-danger="not is_done and deadline and deadline &lt; context_today()">
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="deadline"/>
+                <field name="is_done" widget="boolean_toggle"/>
+                <field name="task_count"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Milestone Form -->
+    <record id="view_bb_project_milestone_form" model="ir.ui.view">
+        <field name="name">bb.project.milestone.form</field>
+        <field name="model">bb.project.milestone</field>
+        <field name="arch" type="xml">
+            <form string="Milestone">
+                <header>
+                    <button name="action_mark_done" string="Mark Done" type="object" class="btn-primary" invisible="is_done"/>
+                    <button name="action_reset" string="Reopen" type="object" invisible="not is_done"/>
+                    <field name="is_done" widget="statusbar" statusbar_visible="0,1"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="project_id"/>
+                            <field name="deadline"/>
+                        </group>
+                        <group>
+                            <field name="is_done"/>
+                            <field name="task_count"/>
+                        </group>
+                    </group>
+                    <group string="Description">
+                        <field name="description" nolabel="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Tasks" name="tasks">
+                            <field name="task_ids" readonly="1">
+                                <tree editable="bottom" multi_edit="1">
+                                    <field name="name"/>
+                                    <field name="assignee_id"/>
+                                    <field name="status"/>
+                                    <field name="priority"/>
+                                    <field name="deadline"/>
+                                </tree>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Milestone Action -->
+    <record id="action_bb_project_milestone" model="ir.actions.act_window">
+        <field name="name">Milestones</field>
+        <field name="res_model">bb.project.milestone</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+</odoo>

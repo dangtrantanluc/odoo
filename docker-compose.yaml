@@ -1,0 +1,164 @@
+services:
+
+  # ──────────────────────────────────────────────
+  # Database
+  # ──────────────────────────────────────────────
+  db:
+    image: postgres:16.2-alpine
+    container_name: project_management_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      POSTGRES_DB: ${POSTGRES_DB:-project_management}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    networks:
+      - pm_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-project_management}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    image: odoo:17.0
+    container_name: project_management_web
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8069:8069"
+    volumes:
+      - ./odoo/custom_addons:/mnt/extra-addons
+      - ./config:/etc/odoo
+    environment:
+      - HOST=db
+      - USER=admin
+      - PASSWORD=admin123
+    networks:
+      - pm_network
+  # ──────────────────────────────────────────────
+  # Backend (FastAPI)
+  # ──────────────────────────────────────────────
+  # backend:
+  #   build:
+  #     context: ./pm-be
+  #     dockerfile: Dockerfile
+  #   container_name: project_management_backend
+  #   restart: always
+  #   environment:
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@db:5432/${POSTGRES_DB:-project_management}
+  #     SECRET_KEY: ${SECRET_KEY:-09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7}
+  #     ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+  #     REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+  #     MINIO_ENDPOINT: minio:9000
+  #     MINIO_PUBLIC_ENDPOINT: "https://management1.maximus-nhon.online/api/files"
+  #     MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+  #     MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+  #     MINIO_BUCKET: ${MINIO_BUCKET:-file-storage}
+
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   networks:
+  #     - pm_network
+
+  # # ──────────────────────────────────────────────
+  # # Frontend (React / Vite → Nginx)
+  # # ──────────────────────────────────────────────
+  # frontend:
+  #   build:
+  #     context: ./pm-fe
+  #     dockerfile: Dockerfile
+  #     args:
+  #       # Browser talks directly to the host-exposed backend port
+  #       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+  #   container_name: project_management_frontend
+  #   restart: always
+  #   ports:
+  #     - "3000:80"
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - pm_network
+
+  # minio:
+  #   image: minio/minio
+  #   volumes:
+  #     - ./minio-data:/data
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   environment:
+  #     MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+  #     MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+  #   command: server /data --console-address ":9001"
+  #   networks:
+  #     - pm_network
+  # minio-bucket:
+  #   image: minio/mc
+  #   depends_on:
+  #     - minio
+  #   entrypoint: >
+  #     /bin/sh -c "
+  #     sleep 5;
+  #     mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+  #     mc mb myminio/file-storage;
+  #     mc anonymous set public myminio/file-storage;
+  #     exit 0;
+  #     "
+  #   networks:
+  #     - pm_network
+  # # ──────────────────────────────────────────────
+  # # OpenSearch
+  # # ──────────────────────────────────────────────
+  # opensearch-node1:
+  #   image: opensearchproject/opensearch:latest
+  #   container_name: opensearch-node1
+  #   environment:
+  #     - cluster.name=opensearch-cluster
+  #     - node.name=opensearch-node1
+  #     - discovery.type=single-node
+  #     - bootstrap.memory_lock=true
+  #     - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+  #     - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-myStrongPassword123!}
+  #   ulimits:
+  #     memlock:
+  #       soft: -1
+  #       hard: -1
+  #   volumes:
+  #     - opensearch-data:/usr/share/opensearch/data
+  #   ports:
+  #     - "9200:9200"
+  #     - "9600:9600"
+  #   networks:
+  #     - pm_network
+
+  # opensearch-dashboards:
+  #   image: opensearchproject/opensearch-dashboards:latest
+  #   container_name: opensearch-dashboards
+  #   ports:
+  #     - "5601:5601"
+  #   environment:
+  #     OPENSEARCH_HOSTS: '["https://opensearch-node1:9200"]'
+  #     OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-myStrongPassword123!}
+  #   depends_on:
+  #     - opensearch-node1
+  #   networks:
+  #     - pm_network
+
+volumes:
+  postgres_data:
+  opensearch-data:
+
+networks:
+  pm_network:
+    driver: bridge
+  
