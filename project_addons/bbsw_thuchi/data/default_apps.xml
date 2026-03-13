@@ -67,7 +67,7 @@
 
     <record id="home_app_duan" model="bbsw.home.app">
         <field name="name">Dự Án</field>
-        <field name="url">/odoo/project</field>
+        <field name="url">/project/bb-project</field>
         <field name="icon">project</field>
         <field name="gradient">grad-teal</field>
         <field name="sequence">90</field>

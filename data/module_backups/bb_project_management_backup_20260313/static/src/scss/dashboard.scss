@@ -1,0 +1,244 @@
+:root {
+    --bb-gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --bb-gradient-2: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --bb-gradient-3: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --bb-gradient-4: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    --bb-gradient-5: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    --bb-gradient-6: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
+}
+
+.bb_dashboard {
+    padding: 24px;
+    background: #f4f6f9;
+    min-height: 100%;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+
+    .bb_dashboard_header {
+        margin-bottom: 28px;
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin: 0 0 4px;
+
+            .bb_logo_dot {
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: var(--bb-gradient-1);
+                margin-right: 8px;
+                vertical-align: middle;
+            }
+        }
+
+        p {
+            color: #6c757d;
+            margin: 0;
+            font-size: 0.9rem;
+        }
+    }
+
+    .bb_section_title {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #6c757d;
+        margin-bottom: 12px;
+        margin-top: 28px;
+    }
+
+    /* ─── KPI CARDS ─── */
+    .bb_kpi_grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 16px;
+    }
+
+    .bb_kpi_card {
+        border-radius: 16px;
+        padding: 20px 22px;
+        color: #fff;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+        &:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+        }
+
+        &::after {
+            content: '';
+            position: absolute;
+            right: -20px;
+            top: -20px;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        &.g1 { background: var(--bb-gradient-1); }
+        &.g2 { background: var(--bb-gradient-2); }
+        &.g3 { background: var(--bb-gradient-3); }
+        &.g4 { background: var(--bb-gradient-4); }
+        &.g5 { background: var(--bb-gradient-5); }
+        &.g6 { background: var(--bb-gradient-6); }
+
+        .kpi_icon {
+            font-size: 1.6rem;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .kpi_value {
+            font-size: 2.2rem;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .kpi_label {
+            font-size: 0.8rem;
+            font-weight: 500;
+            opacity: 0.85;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi_sub {
+            font-size: 0.75rem;
+            margin-top: 8px;
+            opacity: 0.75;
+        }
+    }
+
+    /* ─── STATUS BREAKDOWN ─── */
+    .bb_status_grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .bb_status_card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 20px 24px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+        h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin: 0 0 16px;
+
+            i { margin-right: 8px; color: #667eea; }
+        }
+
+        .status_row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 7px 0;
+            cursor: pointer;
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin: 2px -10px;
+            transition: background 0.15s;
+
+            &:hover { background: #f4f6f9; }
+
+            .status_name {
+                font-size: 0.85rem;
+                color: #495057;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+
+                .status_dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                }
+            }
+
+            .status_count {
+                font-weight: 700;
+                font-size: 0.95rem;
+                color: #1a1a2e;
+            }
+        }
+    }
+
+    /* ─── PROGRESS BARS ─── */
+    .bb_progress_card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 20px 24px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+        h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin: 0 0 20px;
+            i { margin-right: 8px; color: #667eea; }
+        }
+
+        .progress_item { margin-bottom: 16px; }
+
+        .progress_header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 0.82rem;
+
+            .progress_label { color: #6c757d; font-weight: 500; }
+            .progress_value { color: #1a1a2e; font-weight: 700; }
+        }
+
+        .progress_bar_wrap {
+            background: #e9ecef;
+            border-radius: 100px;
+            height: 8px;
+            overflow: hidden;
+
+            .progress_bar_fill {
+                height: 100%;
+                border-radius: 100px;
+                transition: width 0.6s ease;
+
+                &.budget { background: var(--bb-gradient-1); }
+                &.tasks  { background: var(--bb-gradient-4); }
+                &.danger { background: var(--bb-gradient-2); }
+            }
+        }
+    }
+
+    /* ─── BUDGET CARD ─── */
+    .bb_budget_row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    /* ─── LOADING ─── */
+    .bb_loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 300px;
+        gap: 12px;
+        color: #6c757d;
+        font-size: 1rem;
+
+        i { font-size: 1.5rem; animation: spin 1s linear infinite; }
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+}
