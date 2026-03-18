@@ -1,0 +1,133 @@
+/* BBSW Login Page Theme */
+
+/* Background */
+body.bg-100 {
+    background: linear-gradient(135deg, #003585 0%, #004aad 60%, #0062cc 100%) !important;
+    min-height: 100vh;
+}
+
+/* Card container */
+.o_database_list {
+    background: #fff !important;
+    border-radius: 16px !important;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35) !important;
+    max-width: 400px !important;
+    overflow: hidden;
+    border: none !important;
+}
+
+/* Card body */
+.o_database_list .card-body {
+    padding: 0 !important;
+}
+
+/* Logo section */
+.o_database_list .text-center.pb-3.border-bottom {
+    background: linear-gradient(135deg, #003585, #004aad);
+    padding: 32px 28px 24px !important;
+    border-bottom: 4px solid #f97316 !important;
+    margin-bottom: 0 !important;
+}
+
+.o_database_list .text-center.pb-3.border-bottom img {
+    max-height: 80px;
+    filter: brightness(0) invert(1);
+    margin-bottom: 12px;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Add title after logo */
+.o_database_list .text-center.pb-3.border-bottom::after {
+    content: "Quản lý Thu Chi";
+    display: block;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 10px;
+    letter-spacing: 0.4px;
+}
+
+/* Login form wrapper */
+.oe_login_form {
+    padding: 28px 28px 8px !important;
+}
+
+/* Labels */
+.oe_login_form label {
+    font-weight: 600;
+    color: #374151;
+    font-size: 13px;
+}
+
+/* Inputs */
+.oe_login_form .form-control {
+    border: 1.5px solid #d1d5db !important;
+    border-radius: 8px !important;
+    padding: 10px 14px !important;
+    font-size: 14px !important;
+    background: #f9fafb !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.oe_login_form .form-control:focus {
+    border-color: #004aad !important;
+    box-shadow: 0 0 0 3px rgba(0, 74, 173, 0.15) !important;
+    background: #fff !important;
+}
+
+/* Submit button */
+.oe_login_form button[type="submit"],
+.oe_login_form .btn-primary {
+    background: linear-gradient(135deg, #f97316, #ea6c0a) !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 11px !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.3px;
+    width: 100%;
+    transition: opacity 0.2s, transform 0.1s !important;
+    margin-top: 4px;
+}
+
+.oe_login_form button[type="submit"]:hover,
+.oe_login_form .btn-primary:hover {
+    opacity: 0.92 !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Footer */
+.o_database_list .text-center.small.mt-4 {
+    padding: 16px 28px 20px !important;
+    border-top: 1px solid #f3f4f6 !important;
+    margin-top: 0 !important;
+}
+
+.o_database_list .text-center.small.mt-4 a {
+    color: #6b7280 !important;
+    font-size: 12px;
+}
+
+.o_database_list .text-center.small.mt-4 a:hover {
+    color: #004aad !important;
+}
+
+/* Error alert */
+.oe_login_form .alert-danger {
+    background: #fef2f2 !important;
+    border: 1px solid #fca5a5 !important;
+    border-radius: 8px !important;
+    color: #dc2626 !important;
+    font-size: 13px;
+}
+
+/* Container vertical center */
+.container.py-5 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 16px !important;
+}

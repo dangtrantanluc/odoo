@@ -32,12 +32,16 @@
         'views/partner_views.xml',
         'views/home_app_views.xml',
         'views/thuchi_menus.xml',
+        'views/login_template.xml',
         'views/project_homepage_templates.xml',
         'views/thuchi_page_template.xml',
         'data/default_apps.xml',
         'data/employees_data.xml',
     ],
     'assets': {
+        'web.assets_frontend': [
+            'bbsw_thuchi/static/src/css/login_theme.css',
+        ],
         'web.assets_backend': [
             'bbsw_thuchi/static/src/css/backend_theme.css',
             'bbsw_thuchi/static/src/js/graph_colors.js',

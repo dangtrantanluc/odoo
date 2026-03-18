@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Override login form button style -->
+    <template id="bbsw_login_form" name="BBSW Login Form" inherit_id="web.login" priority="20">
+        <xpath expr="//form[hasclass('oe_login_form')]" position="before">
+            <div style="
+                background: linear-gradient(135deg, #003585, #004aad);
+                padding: 28px 28px 20px;
+                text-align: center;
+                border-bottom: 4px solid #f97316;
+                margin: -24px -24px 24px;
+            ">
+                <img t-attf-src="/web/binary/company_logo{{ '?dbname='+db if db else '' }}"
+                     alt="Logo"
+                     style="max-height:70px; max-width:160px; width:auto; filter:brightness(0) invert(1); display:block; margin:0 auto 10px;"/>
+                <div style="color:#fff; font-size:19px; font-weight:700; letter-spacing:0.4px;">Quản lý Thu Chi</div>
+                <div style="color:rgba(255,255,255,0.7); font-size:12px; margin-top:4px;">Đăng nhập để tiếp tục</div>
+            </div>
+        </xpath>
+    </template>
+</odoo>
