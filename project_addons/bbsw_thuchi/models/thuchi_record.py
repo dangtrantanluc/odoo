@@ -39,6 +39,20 @@ class ThuChiRecord(models.Model):
     )
     amount = fields.Float(string='Số tiền', required=True, tracking=True)
 
+    signed_amount = fields.Float(
+        string='Số tiền (ròng)',
+        compute='_compute_signed_amount',
+        store=True,
+    )
+
+    @api.depends('amount', 'type')
+    def _compute_signed_amount(self):
+        for rec in self:
+            if rec.type == 'thu':
+                rec.signed_amount = rec.amount
+            else:
+                rec.signed_amount = -rec.amount
+
     # ── Đơn vị & Dự án ──
     business_unit_id = fields.Many2one(
         'bbsw.business.unit',
@@ -117,6 +131,31 @@ class ThuChiRecord(models.Model):
         string='Chứng từ đính kèm',
     )
 
+    attachment_count = fields.Integer(
+        string='Số tài liệu',
+        compute='_compute_attachment_count',
+    )
+
+    @api.depends('attachment_ids')
+    def _compute_attachment_count(self):
+        for rec in self:
+            rec.attachment_count = len(rec.attachment_ids)
+
+    def action_view_attachments(self):
+        self.ensure_one()
+        return {
+            'name': 'Chứng từ đính kèm',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ir.attachment',
+            'view_mode': 'tree,form',
+            'domain': [('id', 'in', self.attachment_ids.ids)],
+            'target': 'new',
+            'views': [(False, 'tree'), (False, 'form')],
+            'context': {
+                'create': False,
+            },
+        }
+
     # ── Sequence ──
     @api.model_create_multi
     def create(self, vals_list):
@@ -153,17 +192,31 @@ class ThuChiRecord(models.Model):
         self.write({'state': 'pending'})
 
     def action_approve(self):
-        self.write({'state': 'approved', 'rejection_reason': False})
+        self.write({'state': 'approved', 'rejection_reason': False, 'payment_status': 'paid'})
 
     def action_reject(self):
-        self.write({'state': 'rejected'})
+        self.write({'state': 'rejected', 'payment_status': 'unpaid'})
 
     def action_cancel(self):
-        self.write({'state': 'cancelled'})
+        self.write({'state': 'cancelled', 'payment_status': 'unpaid'})
 
     def action_draft(self):
-        self.write({'state': 'draft', 'rejection_reason': False})
+        self.write({'state': 'draft', 'rejection_reason': False, 'payment_status': 'unpaid'})
 
     # ── Kept for backward compatibility ──
     def action_confirm(self):
         self.action_approve()
+
+    @api.model
+    def get_kpi_totals(self, domain=None):
+        if domain is None:
+            domain = []
+        approved_domain = domain + [('state', '=', 'approved')]
+        records = self.search(approved_domain)
+        tong_thu = sum(r.amount for r in records if r.type == 'thu')
+        tong_chi = sum(r.amount for r in records if r.type == 'chi')
+        return {
+            'tong_thu': tong_thu,
+            'tong_chi': tong_chi,
+            'con_lai': tong_thu - tong_chi,
+        }

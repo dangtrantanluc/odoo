@@ -11,7 +11,7 @@
 
     <record id="home_app_nhansu" model="bbsw.home.app">
         <field name="name">Nhân Sự</field>
-        <field name="url">/odoo/employees</field>
+        <field name="url">/web#action=bbsw_thuchi.action_bbsw_employee</field>
         <field name="icon">users</field>
         <field name="gradient">grad-indigo</field>
         <field name="sequence">20</field>

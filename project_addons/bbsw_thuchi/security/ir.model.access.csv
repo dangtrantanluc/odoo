@@ -8,3 +8,7 @@ access_business_unit_manager,bbsw.business.unit.manager,model_bbsw_business_unit
 access_payment_method_user,bbsw.payment.method.user,model_bbsw_payment_method,base.group_user,1,0,0,0
 access_payment_method_manager,bbsw.payment.method.manager,model_bbsw_payment_method,base.group_system,1,1,1,1
 access_thuchi_project_user,bbsw.thuchi.project.user,model_bbsw_thuchi_project,base.group_user,1,1,1,1
+access_employee_level_user,bbsw.employee.level.user,model_bbsw_employee_level,base.group_user,1,0,0,0
+access_employee_level_manager,bbsw.employee.level.manager,model_bbsw_employee_level,base.group_system,1,1,1,1
+access_payroll_user,bbsw.payroll.user,model_bbsw_payroll,base.group_user,1,1,1,1
+access_attendance_import_user,bbsw.attendance.import.user,model_bbsw_attendance_import,base.group_user,1,1,1,1

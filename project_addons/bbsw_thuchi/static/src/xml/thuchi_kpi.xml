@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-inherit="web.ListView" t-inherit-mode="extension">
+        <xpath expr="//Layout" position="before">
+            <t t-if="props.resModel === 'bbsw.thuchi.record'">
+
+                <!-- KPI Cards -->
+                <t t-if="kpi.loaded">
+                    <div class="bbsw-kpi-bar d-flex gap-3 px-3 pt-3 pb-2">
+                        <div class="bbsw-kpi-card bbsw-kpi-thu flex-fill rounded p-3 d-flex align-items-center gap-3">
+                            <div class="bbsw-kpi-icon d-flex align-items-center justify-content-center rounded-circle">
+                                <i class="fa fa-arrow-up fa-lg"/>
+                            </div>
+                            <div>
+                                <div class="bbsw-kpi-label">Tổng thu</div>
+                                <div class="bbsw-kpi-value"><t t-esc="_formatVND(kpi.thu)"/></div>
+                            </div>
+                        </div>
+                        <div class="bbsw-kpi-card bbsw-kpi-chi flex-fill rounded p-3 d-flex align-items-center gap-3">
+                            <div class="bbsw-kpi-icon d-flex align-items-center justify-content-center rounded-circle">
+                                <i class="fa fa-arrow-down fa-lg"/>
+                            </div>
+                            <div>
+                                <div class="bbsw-kpi-label">Tổng chi</div>
+                                <div class="bbsw-kpi-value"><t t-esc="_formatVND(kpi.chi)"/></div>
+                            </div>
+                        </div>
+                        <div class="bbsw-kpi-card bbsw-kpi-balance flex-fill rounded p-3 d-flex align-items-center gap-3">
+                            <div class="bbsw-kpi-icon d-flex align-items-center justify-content-center rounded-circle">
+                                <i class="fa fa-wallet fa-lg"/>
+                            </div>
+                            <div>
+                                <div class="bbsw-kpi-label">Tiền còn lại</div>
+                                <div class="bbsw-kpi-value"><t t-esc="_formatVND(kpi.con_lai)"/></div>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+
+                <!-- Thanh công cụ -->
+                <div class="bbsw-toolbar d-flex align-items-center gap-2 px-3 py-2 flex-wrap">
+
+                    <!-- 3 nút tạo phiếu -->
+                    <button class="btn btn-success btn-sm fw-semibold" t-on-click="() => createWithType('thu')">
+                        <i class="fa fa-plus me-1"/>Tạo phiếu thu
+                    </button>
+                    <button class="btn btn-danger btn-sm fw-semibold" t-on-click="() => createWithType('chi')">
+                        <i class="fa fa-plus me-1"/>Tạo phiếu chi
+                    </button>
+                    <button class="btn btn-warning btn-sm fw-semibold" t-on-click="() => createWithType('vay')">
+                        <i class="fa fa-plus me-1"/>Tạo phiếu vay
+                    </button>
+
+                    <div style="width:1px;height:24px;background:#dee2e6;margin:0 4px"/>
+
+                    <!-- Dropdown Thời gian -->
+                    <div class="bbsw-dropdown position-relative">
+                        <button class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                                t-on-click="() => toggleDropdown('showTimeDD')">
+                            <i class="fa fa-calendar"/>
+                            <span t-esc="filterState.timeLabel"/>
+                            <i class="fa fa-caret-down ms-1"/>
+                        </button>
+                        <div t-if="filterState.showTimeDD"
+                             class="bbsw-dropdown-menu position-absolute bg-white border rounded shadow-sm py-1"
+                             style="z-index:1000;min-width:160px;top:100%;left:0;margin-top:2px">
+                            <div class="bbsw-dd-item px-3 py-1" t-on-click="() => applyTimeFilter('this_week','Tuần này')">Tuần này</div>
+                            <div class="bbsw-dd-item px-3 py-1" t-on-click="() => applyTimeFilter('this_month','Tháng này')">Tháng này</div>
+                            <div class="bbsw-dd-item px-3 py-1" t-on-click="() => applyTimeFilter('last_month','Tháng trước')">Tháng trước</div>
+                            <div class="bbsw-dd-item px-3 py-1" t-on-click="() => applyTimeFilter('this_quarter','Quý này')">Quý này</div>
+                            <div class="bbsw-dd-item px-3 py-1" t-on-click="() => applyTimeFilter('this_year','Năm nay')">Năm nay</div>
+                            <div style="height:1px;background:#dee2e6;margin:4px 0"/>
+                            <div class="bbsw-dd-item px-3 py-1" t-on-click="() => applyTimeFilter('custom','Tùy chỉnh')">
+                                <i class="fa fa-sliders me-1"/>Tùy chỉnh…
+                            </div>
+                            <div style="height:1px;background:#dee2e6;margin:4px 0"/>
+                            <div class="bbsw-dd-item px-3 py-1 text-muted" t-on-click="() => applyTimeFilter('all','Tất cả')">Tất cả</div>
+                        </div>
+                    </div>
+
+                    <!-- Custom date range -->
+                    <t t-if="filterState.showCustom">
+                        <div class="d-flex align-items-center gap-1">
+                            <input type="date" class="form-control form-control-sm" style="width:135px"
+                                   t-model="filterState.customFrom"/>
+                            <span class="text-muted">→</span>
+                            <input type="date" class="form-control form-control-sm" style="width:135px"
+                                   t-model="filterState.customTo"/>
+                            <button class="btn btn-primary btn-sm" t-on-click="applyCustomTime">Áp dụng</button>
+                        </div>
+                    </t>
+
+                    <!-- Dropdown Loại phiếu -->
+                    <div class="bbsw-dropdown position-relative">
+                        <button class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                                t-on-click="() => toggleDropdown('showTypeDD')">
+                            <i class="fa fa-tag"/>
+                            <span t-esc="filterState.typeLabel"/>
+                            <i class="fa fa-caret-down ms-1"/>
+                        </button>
+                        <div t-if="filterState.showTypeDD"
+                             class="bbsw-dropdown-menu position-absolute bg-white border rounded shadow-sm py-1"
+                             style="z-index:1000;min-width:140px;top:100%;left:0;margin-top:2px">
+                            <div class="bbsw-dd-item px-3 py-1 text-muted" t-on-click="() => applyTypeFilter('all','Tất cả')">Tất cả</div>
+                            <div style="height:1px;background:#dee2e6;margin:4px 0"/>
+                            <div class="bbsw-dd-item px-3 py-1 text-success fw-semibold" t-on-click="() => applyTypeFilter('thu','Phiếu thu')">
+                                <i class="fa fa-arrow-up me-1"/>Phiếu thu
+                            </div>
+                            <div class="bbsw-dd-item px-3 py-1 text-danger fw-semibold" t-on-click="() => applyTypeFilter('chi','Phiếu chi')">
+                                <i class="fa fa-arrow-down me-1"/>Phiếu chi
+                            </div>
+                            <div class="bbsw-dd-item px-3 py-1 text-warning fw-semibold" t-on-click="() => applyTypeFilter('vay','Phiếu vay')">
+                                <i class="fa fa-bank me-1"/>Phiếu vay
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dropdown Trạng thái -->
+                    <div class="bbsw-dropdown position-relative">
+                        <button class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                                t-on-click="() => toggleDropdown('showStateDD')">
+                            <i class="fa fa-filter"/>
+                            <span t-esc="filterState.stateLabel"/>
+                            <i class="fa fa-caret-down ms-1"/>
+                        </button>
+                        <div t-if="filterState.showStateDD"
+                             class="bbsw-dropdown-menu position-absolute bg-white border rounded shadow-sm py-1"
+                             style="z-index:1000;min-width:140px;top:100%;left:0;margin-top:2px">
+                            <div class="bbsw-dd-item px-3 py-1 text-muted" t-on-click="() => applyStateFilter('all','Tất cả')">Tất cả</div>
+                            <div style="height:1px;background:#dee2e6;margin:4px 0"/>
+                            <div class="bbsw-dd-item px-3 py-1" t-on-click="() => applyStateFilter('draft','Nháp')">Nháp</div>
+                            <div class="bbsw-dd-item px-3 py-1 text-info" t-on-click="() => applyStateFilter('pending','Chờ duyệt')">Chờ duyệt</div>
+                            <div class="bbsw-dd-item px-3 py-1 text-success" t-on-click="() => applyStateFilter('approved','Đã duyệt')">Đã duyệt</div>
+                            <div class="bbsw-dd-item px-3 py-1 text-danger" t-on-click="() => applyStateFilter('rejected','Từ chối')">Từ chối</div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </t>
+        </xpath>
+    </t>
+
+</templates>

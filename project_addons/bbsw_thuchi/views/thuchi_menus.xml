@@ -8,6 +8,12 @@
               web_icon="bbsw_thuchi,static/description/icon.png"/>
 
     <!-- ═══════════════ Sub Menus ═══════════════ -->
+    <menuitem id="menu_thuchi_dashboard"
+              name="Bảng điều khiển"
+              parent="menu_thuchi_root"
+              action="action_thuchi_dashboard"
+              sequence="5"/>
+
     <menuitem id="menu_thuchi_records"
               name="Bản ghi Thu Chi"
               parent="menu_thuchi_root"
@@ -19,6 +25,60 @@
               parent="menu_thuchi_root"
               action="action_thuchi_project"
               sequence="20"/>
+
+    <!-- ═══════════════ Nhân sự (Root App riêng) ═══════════════ -->
+    <menuitem id="menu_nhansu_root"
+              name="Nhân Sự"
+              sequence="20"
+              web_icon="hr,static/description/icon.png"/>
+
+    <menuitem id="menu_nhansu_employee"
+              name="Nhân viên"
+              parent="menu_nhansu_root"
+              action="action_bbsw_employee"
+              sequence="10"/>
+
+    <menuitem id="menu_nhansu_department"
+              name="Phòng ban"
+              parent="menu_nhansu_root"
+              action="action_bbsw_department"
+              sequence="20"/>
+
+    <!-- Báo cáo -->
+    <menuitem id="menu_nhansu_baocao"
+              name="Báo cáo"
+              parent="menu_nhansu_root"
+              sequence="80"/>
+
+    <menuitem id="menu_nhansu_report_employee"
+              name="Phân tích nhân viên"
+              parent="menu_nhansu_baocao"
+              action="action_bbsw_employee_report"
+              sequence="10"/>
+
+    <!-- Cấu hình -->
+    <menuitem id="menu_nhansu_cauhinh"
+              name="Cấu hình"
+              parent="menu_nhansu_root"
+              sequence="90"/>
+
+    <menuitem id="menu_nhansu_job"
+              name="Vị trí công việc"
+              parent="menu_nhansu_cauhinh"
+              action="action_bbsw_job_position"
+              sequence="10"/>
+
+    <menuitem id="menu_nhansu_level"
+              name="Cấp bậc"
+              parent="menu_nhansu_cauhinh"
+              action="action_bbsw_employee_level"
+              sequence="20"/>
+
+    <menuitem id="menu_nhansu_bu"
+              name="Đơn vị kinh doanh"
+              parent="menu_nhansu_cauhinh"
+              action="action_business_unit"
+              sequence="30"/>
 
     <menuitem id="menu_thuchi_config"
               name="Cấu hình"
@@ -42,6 +102,12 @@
               parent="menu_thuchi_config"
               action="action_payment_method"
               sequence="30"/>
+
+    <menuitem id="menu_thuchi_partner"
+              name="Đối tác"
+              parent="menu_thuchi_config"
+              action="action_thuchi_partner"
+              sequence="40"/>
 
     <menuitem id="menu_home_apps"
               name="Ứng dụng trang chủ"

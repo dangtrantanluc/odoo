@@ -11,6 +11,8 @@ class PaymentMethod(models.Model):
     type = fields.Selection([
         ('cash', 'Tiền mặt'),
         ('bank', 'Chuyển khoản'),
+        ('ewallet', 'Ví điện tử'),
+        ('card', 'Thẻ tín dụng / Ghi nợ'),
         ('other', 'Khác'),
     ], string='Loại', default='cash')
     account_info = fields.Char(string='Thông tin tài khoản')

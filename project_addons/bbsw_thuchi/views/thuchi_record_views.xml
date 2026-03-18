@@ -18,7 +18,8 @@
                 <field name="partner_id" optional="show"/>
                 <field name="employee_id" optional="show"/>
                 <field name="payment_method_id" optional="show"/>
-                <field name="amount" sum="Tổng cộng"/>
+                <field name="amount"/>
+                <field name="signed_amount" string="Số dư (ròng)" sum="Số dư ròng" optional="show"/>
                 <field name="payment_status" widget="badge"
                        decoration-success="payment_status == 'paid'"
                        decoration-warning="payment_status == 'unpaid'"/>
@@ -112,8 +113,14 @@
                             <field name="note"/>
                         </page>
                         <page string="Chứng từ đính kèm">
-                            <field name="attachment_ids" widget="many2many_binary"
-                                  string="Chứng từ"/>
+                            <div class="bbsw-paste-zone" tabindex="0"
+                                 style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:10px 16px;border:2px dashed #adb5bd;border-radius:6px;background:#f8f9fa;color:#6c757d;font-size:13px;cursor:pointer;outline:none;"
+                                 onfocus="this.style.borderColor='#0d6efd';this.style.background='#e8f0fe';"
+                                 onblur="this.style.borderColor='#adb5bd';this.style.background='#f8f9fa';">
+                                <i class="fa fa-clipboard" style="font-size:16px;"/>
+                                <span>Nhấn vào đây rồi dán ảnh / file <kbd style="background:#dee2e6;border:1px solid #adb5bd;border-radius:3px;padding:1px 6px;font-size:11px;">Ctrl+V</kbd></span>
+                            </div>
+                            <field name="attachment_ids" widget="many2many_binary" string="Chứng từ đính kèm"/>
                         </page>
                     </notebook>
                 </sheet>
@@ -141,9 +148,9 @@
                 <filter name="filter_hoan_ung" string="Hoàn ứng" domain="[('type', '=', 'hoan_ung')]"/>
                 <separator/>
                 <!-- Trạng thái duyệt -->
+                <filter name="filter_approved" string="Đã duyệt" domain="[('state', '=', 'approved')]"/>
                 <filter name="filter_draft" string="Nháp" domain="[('state', '=', 'draft')]"/>
                 <filter name="filter_pending" string="Chờ duyệt" domain="[('state', '=', 'pending')]"/>
-                <filter name="filter_approved" string="Đã duyệt" domain="[('state', '=', 'approved')]"/>
                 <filter name="filter_rejected" string="Từ chối" domain="[('state', '=', 'rejected')]"/>
                 <separator/>
                 <!-- Thanh toán -->
@@ -160,6 +167,43 @@
                 <filter name="group_user" string="Người tạo" context="{'group_by': 'user_id'}"/>
             </search>
         </field>
+    </record>
+
+    <!-- ═══════════════ Pivot View ═══════════════ -->
+    <record id="view_thuchi_record_pivot" model="ir.ui.view">
+        <field name="name">bbsw.thuchi.record.pivot</field>
+        <field name="model">bbsw.thuchi.record</field>
+        <field name="arch" type="xml">
+            <pivot string="Bảng điều khiển Thu Chi" disable_linking="0">
+                <field name="type" type="row"/>
+                <field name="date" type="col" interval="month"/>
+                <field name="signed_amount" type="measure" string="Số tiền (ròng)"/>
+                <field name="amount" type="measure" string="Số tiền"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Graph View ═══════════════ -->
+    <record id="view_thuchi_record_graph" model="ir.ui.view">
+        <field name="name">bbsw.thuchi.record.graph</field>
+        <field name="model">bbsw.thuchi.record</field>
+        <field name="arch" type="xml">
+            <graph string="Biểu đồ Thu Chi" type="bar" stacked="0">
+                <field name="date" type="row" interval="month"/>
+                <field name="type" type="col"/>
+                <field name="amount" type="measure" string="Số tiền"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Dashboard Action ═══════════════ -->
+    <record id="action_thuchi_dashboard" model="ir.actions.act_window">
+        <field name="name">Bảng điều khiển</field>
+        <field name="res_model">bbsw.thuchi.record</field>
+        <field name="view_mode">graph,pivot,tree</field>
+        <field name="search_view_id" ref="view_thuchi_record_search"/>
+        <field name="domain">[('state', '=', 'approved')]</field>
+        <field name="context">{}</field>
     </record>
 
     <!-- ═══════════════ Action ═══════════════ -->
