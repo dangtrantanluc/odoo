@@ -35,5 +35,5 @@ class BbProjectMember(models.Model):
         for rec in self:
             active_rate = rec.rate_ids.filtered(
                 lambda r: r.effective_from <= today and (not r.effective_to or r.effective_to >= today)
-            )
+            ).sorted('effective_from', reverse=True)
             rec.current_rate = active_rate[:1].cost_per_hour if active_rate else 0.0

@@ -32,14 +32,19 @@ class BbProjectTask(models.Model):
     ], string='Priority', default='medium', tracking=True)
 
     deadline = fields.Date(string='Deadline')
+    end_at = fields.Date(string='End At', tracking=True,
+                         help='Planned completion date for this task')
+    days_remaining = fields.Integer(
+        string='Days Left', compute='_compute_days_remaining', store=False,
+    )
+    milestone_id = fields.Many2one(
+        'bb.project.milestone', string='Milestone', ondelete='set null', index=True,
+        domain="[('project_id', '=', project_id)]",
+    )
     description = fields.Html(string='Description')
     result = fields.Text(string='Result / Output', tracking=True)
     issues = fields.Text(string='Issues / Blockers', tracking=True)
 
-    milestone_id = fields.Many2one(
-        'bb.project.milestone', string='Milestone',
-        domain="[('project_id', '=', project_id)]",
-    )
     tag_ids = fields.Many2many(
         'bb.project.tag', 'bb_project_task_tag_rel', 'task_id', 'tag_id', string='Tags',
     )
@@ -65,6 +70,15 @@ class BbProjectTask(models.Model):
         string='Work Logs',
         compute='_compute_backlog_count',
     )
+
+    @api.depends('end_at', 'status')
+    def _compute_days_remaining(self):
+        today = fields.Date.today()
+        for rec in self:
+            if rec.end_at and rec.status != 'done':
+                rec.days_remaining = (rec.end_at - today).days
+            else:
+                rec.days_remaining = 0
 
     @api.depends('backlog_ids', 'backlog_ids.status', 'backlog_ids.hours', 'backlog_ids.total_cost_snapshot')
     def _compute_total_hours(self):

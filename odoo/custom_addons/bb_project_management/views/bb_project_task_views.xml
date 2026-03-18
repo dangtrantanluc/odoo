@@ -13,9 +13,12 @@
                 <field name="name"/>
                 <field name="project_id"/>
                 <field name="assignee_id" widget="many2one_avatar_user"/>
-                <field name="milestone_id"/>
                 <field name="priority" widget="priority"/>
-                <field name="deadline" decoration-danger="deadline and deadline &lt; context_today() and status != 'done'"/>
+                <field name="milestone_id"/>
+                <field name="end_at" decoration-danger="end_at and end_at &lt; context_today() and status != 'done'"/>
+                <field name="days_remaining"
+                       decoration-danger="days_remaining &lt; 0 and status != 'done'"
+                       decoration-warning="days_remaining &lt;= 3 and days_remaining &gt;= 0 and status != 'done'"/>
                 <field name="status" widget="badge"
                        decoration-success="status == 'done'"
                        decoration-info="status == 'review'"
@@ -105,9 +108,9 @@
                         <group string="Details">
                             <field name="project_id"/>
                             <field name="assignee_id" widget="many2one_avatar_user"/>
-                            <field name="milestone_id"
-                                   domain="[('project_id', '=', project_id)]"/>
-                            <field name="deadline"/>
+                            <field name="milestone_id" domain="[('project_id', '=', project_id)]"/>
+                            <field name="end_at"/>
+                            <field name="days_remaining"/>
                             <field name="priority" widget="priority"/>
                             <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
                         </group>

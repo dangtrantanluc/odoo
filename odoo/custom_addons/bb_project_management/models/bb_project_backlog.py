@@ -32,6 +32,7 @@ class BbProjectBacklog(models.Model):
         readonly=True,
         help='Rate at the time of logging (auto-filled on save)',
     )
+    
     total_cost_snapshot = fields.Monetary(
         string='Total Cost',
         currency_field='currency_id',
@@ -69,12 +70,16 @@ class BbProjectBacklog(models.Model):
         return super().create(vals_list)
 
     def action_approve(self):
+        if not self.env.user.has_group('bb_project_management.group_bb_pm_admin'):
+            raise UserError("Only administrators can approve work logs.")
         for rec in self:
             if rec.status != 'pending':
                 raise UserError(f"Backlog '{rec.id}' is not in Pending status.")
             rec.write({'status': 'approved', 'approver_id': self.env.user.id})
 
     def action_reject(self):
+        if not self.env.user.has_group('bb_project_management.group_bb_pm_admin'):
+            raise UserError("Only administrators can reject work logs.")
         for rec in self:
             if rec.status != 'pending':
                 raise UserError(f"Backlog '{rec.id}' is not in Pending status.")

@@ -33,13 +33,14 @@
         <field name="name">bb.project.tree</field>
         <field name="model">bb.project</field>
         <field name="arch" type="xml">
-            <tree string="Projects" editable="bottom" multi_edit="1"
+            <tree string="Projects"
                   decoration-success="status == 'completed'"
                   decoration-muted="status == 'cancelled'"
                   decoration-warning="status == 'on_hold'"
                   decoration-info="status == 'in_progress'">
                 <field name="name"/>
                 <field name="code"/>
+                <field name="customer_id"/>
                 <field name="owner_id" widget="many2one_avatar_user"/>
                 <field name="start_date"/>
                 <field name="end_date" decoration-danger="end_date and end_date &lt; context_today() and status not in ('completed','cancelled')"/>
@@ -51,11 +52,9 @@
                        decoration-muted="status == 'planned'"/>
                 <field name="priority" widget="priority"/>
                 <field name="budget"/>
+                <field name="estimated_total_cost"/>
                 <field name="total_cost"/>
                 <field name="currency_id" column_invisible="1"/>
-                <field name="task_count"/>
-                <field name="member_count"/>
-                <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
             </tree>
         </field>
     </record>
@@ -168,11 +167,6 @@
                         <button name="action_view_tasks" type="object" class="oe_stat_button" icon="fa-tasks">
                             <field name="task_count" widget="statinfo" string="Tasks"/>
                         </button>
-                        <button name="%(action_bb_project_milestone)d" type="action"
-                                class="oe_stat_button" icon="fa-flag"
-                                context="{'default_project_id': active_id}">
-                            <field name="milestone_count" widget="statinfo" string="Milestones"/>
-                        </button>
                         <button name="%(action_bb_project_member)d" type="action"
                                 class="oe_stat_button" icon="fa-users"
                                 context="{'default_project_id': active_id}">
@@ -180,6 +174,9 @@
                         </button>
                         <button name="action_view_backlogs" type="object" class="oe_stat_button" icon="fa-clock-o">
                             <field name="backlog_count" widget="statinfo" string="Work Logs"/>
+                        </button>
+                        <button name="action_view_milestones" type="object" class="oe_stat_button" icon="fa-flag">
+                            <field name="milestone_count" widget="statinfo" string="Milestones"/>
                         </button>
                     </div>
                     <div class="oe_title">
@@ -193,14 +190,18 @@
                     <group>
                         <group string="Project Details">
                             <field name="owner_id" widget="many2one_avatar_user"/>
+                            <field name="account_manager_id" widget="many2one_avatar_user"/>
                             <field name="start_date"/>
                             <field name="end_date"/>
                             <field name="priority" widget="priority"/>
-                            <field name="customer_id" widget="many2one_avatar_partner"/>
+                            <field name="customer_id" widget="many2one_avatar_partner"
+                                   options="{'no_create': False, 'no_quick_create': False}"/>
                             <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
                         </group>
                         <group string="Financial">
                             <field name="budget"/>
+                            <field name="estimated_total_hours" readonly="1"/>
+                            <field name="estimated_total_cost" readonly="1"/>
                             <field name="total_cost" readonly="1"/>
                             <field name="budget_remaining" readonly="1"
                                    decoration-danger="budget_remaining &lt; 0"/>
@@ -212,6 +213,43 @@
                         <page string="Description" name="description">
                             <field name="description" placeholder="Project description and objectives..."/>
                         </page>
+                        <page string="Estimation (Scope)" name="scope">
+                            <field name="scope_ids" context="{'default_project_id': active_id}">
+                                <tree editable="bottom"
+                                      decoration-success="task_id != False">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="assignee_id" widget="many2one_avatar_user"/>
+                                    <field name="estimated_hours"/>
+                                    <field name="estimated_rate"/>
+                                    <field name="estimated_cost" readonly="1"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                    <field name="notes"/>
+                                    <field name="task_id" readonly="1"/>
+                                    <button name="action_create_task" string="Create Task" type="object"
+                                            icon="fa-plus-circle"
+                                            invisible="task_id != False"
+                                            groups="bb_project_management.group_bb_pm_manager"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Milestones" name="milestones">
+                            <field name="milestone_ids" context="{'default_project_id': active_id}">
+                                <tree editable="bottom"
+                                      decoration-success="status == 'done'"
+                                      decoration-warning="status == 'in_progress'">
+                                    <field name="name"/>
+                                    <field name="due_date" decoration-danger="due_date and due_date &lt; context_today() and status not in ('done','cancelled')"/>
+                                    <field name="task_count"/>
+                                    <field name="done_count"/>
+                                    <field name="completion_pct" widget="progressbar"/>
+                                    <field name="status" widget="badge"
+                                           decoration-success="status == 'done'"
+                                           decoration-warning="status == 'in_progress'"
+                                           decoration-muted="status in ('draft','cancelled')"/>
+                                </tree>
+                            </field>
+                        </page>
                         <page string="Tasks" name="tasks">
                             <field name="task_ids" context="{'default_project_id': active_id}">
                                 <tree editable="bottom" multi_edit="1" decoration-success="status == 'done'"
@@ -219,7 +257,6 @@
                                     <field name="name"/>
                                     <field name="project_id" column_invisible="1"/>
                                     <field name="assignee_id" widget="many2one_avatar_user"/>
-                                    <field name="milestone_id"/>
                                     <field name="priority" widget="priority"/>
                                     <field name="deadline"/>
                                     <field name="status" widget="badge"
@@ -239,18 +276,6 @@
                                     <field name="current_rate"/>
                                     <field name="currency_id" column_invisible="1"/>
                                     <field name="joined_at"/>
-                                </tree>
-                            </field>
-                        </page>
-                        <page string="Milestones" name="milestones">
-                            <field name="milestone_ids" context="{'default_project_id': active_id}">
-                                <tree editable="bottom"
-                                      decoration-success="is_done"
-                                      decoration-danger="not is_done and deadline and deadline &lt; context_today()">
-                                    <field name="name"/>
-                                    <field name="deadline"/>
-                                    <field name="is_done" widget="boolean_toggle"/>
-                                    <field name="task_count"/>
                                 </tree>
                             </field>
                         </page>

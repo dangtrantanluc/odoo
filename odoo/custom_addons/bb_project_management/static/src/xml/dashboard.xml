@@ -2,193 +2,304 @@
 <templates xml:space="preserve">
 
 <t t-name="bb_project_management.Dashboard">
-    <div class="bb_dashboard">
+<div class="bb_dash">
 
-        <!-- Header -->
-        <div class="bb_dashboard_header">
-            <h1>
-                <span class="bb_logo_dot"/>
-                BlueBolt Project Dashboard
-            </h1>
-            <p>Live overview of projects, tasks, work logs and budget across your team.</p>
+    <!-- ── Header + Filters ──────────────────────────────── -->
+    <div class="bb_dash_top">
+        <div class="bb_dash_title">
+            <span class="bb_dot"/>
+            <div>
+                <h1>Project Analytics</h1>
+                <p>BlueBolt · Live overview</p>
+            </div>
         </div>
 
-        <!-- Loading -->
-        <t t-if="state.loading">
-            <div class="bb_loading">
-                <i class="fa fa-circle-o-notch"/>
-                <span>Loading dashboard…</span>
+        <div class="bb_filters">
+            <button t-attf-class="bb_fbtn {{state.filter === 'week' ? 'active' : ''}}"
+                    t-on-click="() => this.setFilter('week')">This Week</button>
+            <button t-attf-class="bb_fbtn {{state.filter === 'month' ? 'active' : ''}}"
+                    t-on-click="() => this.setFilter('month')">This Month</button>
+            <button t-attf-class="bb_fbtn {{state.filter === 'all' ? 'active' : ''}}"
+                    t-on-click="() => this.setFilter('all')">All Time</button>
+            <div t-attf-class="bb_custom_range {{state.filter === 'custom' ? 'open' : ''}}">
+                <button t-attf-class="bb_fbtn {{state.filter === 'custom' ? 'active' : ''}}"
+                        t-on-click="() => this.setFilter('custom')">Custom</button>
+                <t t-if="state.filter === 'custom'">
+                    <input type="date" class="bb_date_inp" t-model="state.dateFrom"/>
+                    <span class="bb_date_sep">→</span>
+                    <input type="date" class="bb_date_inp" t-model="state.dateTo"/>
+                    <button class="bb_fbtn apply" t-on-click="() => this.applyCustom()">Apply</button>
+                </t>
             </div>
-        </t>
-
-        <t t-else="">
-            <!-- ── KPI Cards ── -->
-            <div class="bb_section_title">Key Metrics</div>
-            <div class="bb_kpi_grid">
-
-                <div class="bb_kpi_card g1" t-on-click="() => openProjects([])">
-                    <div class="kpi_icon"><i class="fa fa-briefcase"/></div>
-                    <div class="kpi_value"><t t-esc="state.projects.total"/></div>
-                    <div class="kpi_label">Total Projects</div>
-                    <div class="kpi_sub"><t t-esc="state.projects.in_progress"/> in progress</div>
-                </div>
-
-                <div class="bb_kpi_card g3" t-on-click="() => openTasks([])">
-                    <div class="kpi_icon"><i class="fa fa-tasks"/></div>
-                    <div class="kpi_value"><t t-esc="state.tasks.total"/></div>
-                    <div class="kpi_label">Total Tasks</div>
-                    <div class="kpi_sub"><t t-esc="state.tasks.done"/> completed</div>
-                </div>
-
-                <div class="bb_kpi_card g2" t-on-click="() => openBacklogs([['status','=','pending']])">
-                    <div class="kpi_icon"><i class="fa fa-clock-o"/></div>
-                    <div class="kpi_value"><t t-esc="state.backlogs.pending"/></div>
-                    <div class="kpi_label">Pending Approvals</div>
-                    <div class="kpi_sub"><t t-esc="state.backlogs.approved"/> approved</div>
-                </div>
-
-                <div class="bb_kpi_card g4">
-                    <div class="kpi_icon"><i class="fa fa-money"/></div>
-                    <div class="kpi_value" t-esc="_formatCurrency(state.budget.spent)"/>
-                    <div class="kpi_label">Total Spent</div>
-                    <div class="kpi_sub">of <t t-esc="_formatCurrency(state.budget.total)"/> budget</div>
-                </div>
-
-            </div>
-
-            <!-- ── Status Breakdowns ── -->
-            <div class="bb_section_title">Status Breakdown</div>
-            <div class="bb_status_grid">
-
-                <!-- Projects by status -->
-                <div class="bb_status_card">
-                    <h3><i class="fa fa-briefcase"/>Projects by Status</h3>
-                    <div class="status_row" t-on-click="() => openProjects([['status','=','planned']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#adb5bd"/>Planned
-                        </span>
-                        <span class="status_count"><t t-esc="state.projects.planned"/></span>
-                    </div>
-                    <div class="status_row" t-on-click="() => openProjects([['status','=','in_progress']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#4facfe"/>In Progress
-                        </span>
-                        <span class="status_count"><t t-esc="state.projects.in_progress"/></span>
-                    </div>
-                    <div class="status_row" t-on-click="() => openProjects([['status','=','on_hold']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#fee140"/>On Hold
-                        </span>
-                        <span class="status_count"><t t-esc="state.projects.on_hold"/></span>
-                    </div>
-                    <div class="status_row" t-on-click="() => openProjects([['status','=','completed']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#43e97b"/>Completed
-                        </span>
-                        <span class="status_count"><t t-esc="state.projects.completed"/></span>
-                    </div>
-                    <div class="status_row" t-on-click="() => openProjects([['status','=','cancelled']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#f5576c"/>Cancelled
-                        </span>
-                        <span class="status_count"><t t-esc="state.projects.cancelled"/></span>
-                    </div>
-                </div>
-
-                <!-- Tasks by status -->
-                <div class="bb_status_card">
-                    <h3><i class="fa fa-tasks"/>Tasks by Status</h3>
-                    <div class="status_row" t-on-click="() => openTasks([['status','=','todo']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#adb5bd"/>To Do
-                        </span>
-                        <span class="status_count"><t t-esc="state.tasks.todo"/></span>
-                    </div>
-                    <div class="status_row" t-on-click="() => openTasks([['status','=','in_progress']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#4facfe"/>In Progress
-                        </span>
-                        <span class="status_count"><t t-esc="state.tasks.in_progress"/></span>
-                    </div>
-                    <div class="status_row" t-on-click="() => openTasks([['status','=','review']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#a18cd1"/>Review
-                        </span>
-                        <span class="status_count"><t t-esc="state.tasks.review"/></span>
-                    </div>
-                    <div class="status_row" t-on-click="() => openTasks([['status','=','done']])">
-                        <span class="status_name">
-                            <span class="status_dot" style="background:#43e97b"/>Done
-                        </span>
-                        <span class="status_count"><t t-esc="state.tasks.done"/></span>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- ── Progress ── -->
-            <div class="bb_section_title">Progress Overview</div>
-            <div class="bb_budget_row">
-
-                <div class="bb_progress_card">
-                    <h3><i class="fa fa-money"/>Budget Utilization</h3>
-                    <div class="progress_item">
-                        <div class="progress_header">
-                            <span class="progress_label">Budget Spent</span>
-                            <span class="progress_value"><t t-esc="budgetPercent"/>%</span>
-                        </div>
-                        <div class="progress_bar_wrap">
-                            <div t-attf-class="progress_bar_fill {{budgetPercent >= 90 ? 'danger' : 'budget'}}"
-                                 t-attf-style="width:{{budgetPercent}}%"/>
-                        </div>
-                    </div>
-                    <div class="progress_item">
-                        <div class="progress_header">
-                            <span class="progress_label">Total Budget</span>
-                            <span class="progress_value" t-esc="_formatCurrency(state.budget.total)"/>
-                        </div>
-                        <div class="progress_header">
-                            <span class="progress_label">Spent</span>
-                            <span class="progress_value" t-esc="_formatCurrency(state.budget.spent)"/>
-                        </div>
-                        <div class="progress_header" style="margin-top:4px">
-                            <span class="progress_label">Remaining</span>
-                            <span class="progress_value" t-esc="_formatCurrency(state.budget.remaining)"/>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bb_progress_card">
-                    <h3><i class="fa fa-check-circle"/>Task Completion</h3>
-                    <div class="progress_item">
-                        <div class="progress_header">
-                            <span class="progress_label">Tasks Done</span>
-                            <span class="progress_value"><t t-esc="taskDonePercent"/>%</span>
-                        </div>
-                        <div class="progress_bar_wrap">
-                            <div class="progress_bar_fill tasks"
-                                 t-attf-style="width:{{taskDonePercent}}%"/>
-                        </div>
-                    </div>
-                    <div class="progress_item">
-                        <div class="progress_header">
-                            <span class="progress_label">Total Tasks</span>
-                            <span class="progress_value"><t t-esc="state.tasks.total"/></span>
-                        </div>
-                        <div class="progress_header">
-                            <span class="progress_label">Done</span>
-                            <span class="progress_value"><t t-esc="state.tasks.done"/></span>
-                        </div>
-                        <div class="progress_header" style="margin-top:4px">
-                            <span class="progress_label">Pending Work Logs</span>
-                            <span class="progress_value"><t t-esc="state.backlogs.pending"/></span>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </t>
+        </div>
     </div>
+
+    <!-- ── Loading ───────────────────────────────────────── -->
+    <t t-if="state.loading">
+        <div class="bb_loading">
+            <div class="bb_spinner"/>
+            <span>Loading analytics…</span>
+        </div>
+    </t>
+
+    <t t-else="">
+
+        <!-- ── Row 1: Summary Stats ──────────────────────── -->
+        <div class="bb_stats_row">
+            <div class="bb_stat" t-on-click="() => this.openProjects([])">
+                <div class="bb_stat_num" t-esc="state.projects.total"/>
+                <div class="bb_stat_label">Projects</div>
+                <div class="bb_stat_sub"><t t-esc="state.projects.in_progress"/> in progress</div>
+                <div class="bb_stat_bar" style="background:var(--g1)"/>
+            </div>
+            <div class="bb_stat" t-on-click="() => this.openTasks([])">
+                <div class="bb_stat_num" t-esc="state.tasks.total"/>
+                <div class="bb_stat_label">Tasks</div>
+                <div class="bb_stat_sub"><t t-esc="taskDonePercent"/>% done</div>
+                <div class="bb_stat_bar" style="background:var(--g3)"/>
+            </div>
+            <div class="bb_stat" t-on-click="() => this.openBacklogs([['status','=','pending']])">
+                <div class="bb_stat_num" t-esc="state.backlogs.pending"/>
+                <div class="bb_stat_label">Pending Logs</div>
+                <div class="bb_stat_sub"><t t-esc="state.backlogs.approved"/> approved</div>
+                <div class="bb_stat_bar" style="background:var(--g2)"/>
+            </div>
+            <div class="bb_stat">
+                <div class="bb_stat_num" t-esc="fmt(state.budget.spent)"/>
+                <div class="bb_stat_label">Total Spent</div>
+                <div class="bb_stat_sub"><t t-esc="budgetPercent"/>% of budget</div>
+                <div class="bb_stat_bar" style="background:var(--g4)"/>
+            </div>
+            <div class="bb_stat">
+                <div t-attf-class="bb_stat_num {{state.budget.remaining &lt; 0 ? 'danger' : ''}}"
+                     t-esc="fmt(state.budget.remaining)"/>
+                <div class="bb_stat_label">Remaining Budget</div>
+                <div class="bb_stat_sub"><t t-esc="fmt(state.budget.total)"/> total</div>
+                <div class="bb_stat_bar" t-attf-style="background:{{state.budget.remaining &lt; 0 ? 'var(--g2)' : 'var(--g4)'}}"/>
+            </div>
+        </div>
+
+        <!-- ── Row 2: Three Donut Charts ─────────────────── -->
+        <div class="bb_row3">
+
+            <!-- Projects Donut -->
+            <div class="bb_card">
+                <div class="bb_card_head">
+                    <i class="fa fa-briefcase"/> Projects by Status
+                </div>
+                <div class="bb_donut_wrap">
+                    <svg viewBox="0 0 100 100" class="bb_donut_svg">
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="#e9ecef" stroke-width="12"/>
+                        <t t-foreach="projectSegments" t-as="s" t-key="s_index">
+                            <circle cx="50" cy="50" r="42" fill="none"
+                                    t-att-stroke="s.color"
+                                    stroke-width="12"
+                                    t-att-stroke-dasharray="s.dasharray"
+                                    t-att-stroke-dashoffset="s.dashoffset"
+                                    transform="rotate(-90 50 50)"/>
+                        </t>
+                        <text x="50" y="46" text-anchor="middle" class="donut_center_num"
+                              t-esc="state.projects.total"/>
+                        <text x="50" y="58" text-anchor="middle" class="donut_center_lbl">Projects</text>
+                    </svg>
+                    <div class="bb_legend">
+                        <div class="bb_leg_row" t-on-click="() => this.openProjects([['status','=','planned']])">
+                            <span class="bb_leg_dot" style="background:#adb5bd"/>
+                            <span class="bb_leg_label">Planned</span>
+                            <span class="bb_leg_num" t-esc="state.projects.planned"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openProjects([['status','=','in_progress']])">
+                            <span class="bb_leg_dot" style="background:#4facfe"/>
+                            <span class="bb_leg_label">In Progress</span>
+                            <span class="bb_leg_num" t-esc="state.projects.in_progress"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openProjects([['status','=','on_hold']])">
+                            <span class="bb_leg_dot" style="background:#fee140"/>
+                            <span class="bb_leg_label">On Hold</span>
+                            <span class="bb_leg_num" t-esc="state.projects.on_hold"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openProjects([['status','=','completed']])">
+                            <span class="bb_leg_dot" style="background:#43e97b"/>
+                            <span class="bb_leg_label">Completed</span>
+                            <span class="bb_leg_num" t-esc="state.projects.completed"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openProjects([['status','=','cancelled']])">
+                            <span class="bb_leg_dot" style="background:#f5576c"/>
+                            <span class="bb_leg_label">Cancelled</span>
+                            <span class="bb_leg_num" t-esc="state.projects.cancelled"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tasks Donut -->
+            <div class="bb_card">
+                <div class="bb_card_head">
+                    <i class="fa fa-tasks"/> Tasks by Status
+                </div>
+                <div class="bb_donut_wrap">
+                    <svg viewBox="0 0 100 100" class="bb_donut_svg">
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="#e9ecef" stroke-width="12"/>
+                        <t t-foreach="taskSegments" t-as="s" t-key="s_index">
+                            <circle cx="50" cy="50" r="42" fill="none"
+                                    t-att-stroke="s.color"
+                                    stroke-width="12"
+                                    t-att-stroke-dasharray="s.dasharray"
+                                    t-att-stroke-dashoffset="s.dashoffset"
+                                    transform="rotate(-90 50 50)"/>
+                        </t>
+                        <text x="50" y="46" text-anchor="middle" class="donut_center_num"
+                              t-esc="state.tasks.total"/>
+                        <text x="50" y="58" text-anchor="middle" class="donut_center_lbl">Tasks</text>
+                    </svg>
+                    <div class="bb_legend">
+                        <div class="bb_leg_row" t-on-click="() => this.openTasks([['status','=','todo']])">
+                            <span class="bb_leg_dot" style="background:#adb5bd"/>
+                            <span class="bb_leg_label">To Do</span>
+                            <span class="bb_leg_num" t-esc="state.tasks.todo"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openTasks([['status','=','in_progress']])">
+                            <span class="bb_leg_dot" style="background:#4facfe"/>
+                            <span class="bb_leg_label">In Progress</span>
+                            <span class="bb_leg_num" t-esc="state.tasks.in_progress"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openTasks([['status','=','review']])">
+                            <span class="bb_leg_dot" style="background:#a18cd1"/>
+                            <span class="bb_leg_label">Review</span>
+                            <span class="bb_leg_num" t-esc="state.tasks.review"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openTasks([['status','=','done']])">
+                            <span class="bb_leg_dot" style="background:#43e97b"/>
+                            <span class="bb_leg_label">Done</span>
+                            <span class="bb_leg_num" t-esc="state.tasks.done"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Work Logs Donut -->
+            <div class="bb_card">
+                <div class="bb_card_head">
+                    <i class="fa fa-clock-o"/> Work Logs
+                </div>
+                <div class="bb_donut_wrap">
+                    <svg viewBox="0 0 100 100" class="bb_donut_svg">
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="#e9ecef" stroke-width="12"/>
+                        <t t-foreach="backlogSegments" t-as="s" t-key="s_index">
+                            <circle cx="50" cy="50" r="42" fill="none"
+                                    t-att-stroke="s.color"
+                                    stroke-width="12"
+                                    t-att-stroke-dasharray="s.dasharray"
+                                    t-att-stroke-dashoffset="s.dashoffset"
+                                    transform="rotate(-90 50 50)"/>
+                        </t>
+                        <text x="50" y="44" text-anchor="middle" class="donut_center_num"
+                              t-esc="Math.round(state.backlogs.total_hours)"/>
+                        <text x="50" y="56" text-anchor="middle" class="donut_center_lbl">Hours</text>
+                    </svg>
+                    <div class="bb_legend">
+                        <div class="bb_leg_row" t-on-click="() => this.openBacklogs([['status','=','pending']])">
+                            <span class="bb_leg_dot" style="background:#fee140"/>
+                            <span class="bb_leg_label">Pending</span>
+                            <span class="bb_leg_num" t-esc="state.backlogs.pending"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openBacklogs([['status','=','approved']])">
+                            <span class="bb_leg_dot" style="background:#43e97b"/>
+                            <span class="bb_leg_label">Approved</span>
+                            <span class="bb_leg_num" t-esc="state.backlogs.approved"/>
+                        </div>
+                        <div class="bb_leg_row" t-on-click="() => this.openBacklogs([['status','=','rejected']])">
+                            <span class="bb_leg_dot" style="background:#f5576c"/>
+                            <span class="bb_leg_label">Rejected</span>
+                            <span class="bb_leg_num" t-esc="state.backlogs.rejected"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ── Row 3: Budget per Project + Task Priority ─── -->
+        <div class="bb_row2">
+
+            <!-- Budget per Project horizontal bars -->
+            <div class="bb_card bb_card_wide">
+                <div class="bb_card_head">
+                    <i class="fa fa-money"/> Budget vs Spent per Project
+                </div>
+                <t t-if="budgetBars.length === 0">
+                    <div class="bb_empty">No projects with budget data.</div>
+                </t>
+                <t t-foreach="budgetBars" t-as="p" t-key="p.name">
+                    <div class="bb_budget_item">
+                        <div class="bb_bi_name">
+                            <span t-esc="p.name"/>
+                            <span t-attf-class="bb_badge {{p.status}}" t-esc="p.status.replace('_',' ')"/>
+                        </div>
+                        <div class="bb_bi_bars">
+                            <div class="bb_bi_bar_row">
+                                <span class="bb_bi_lbl">Budget</span>
+                                <div class="bb_bi_track">
+                                    <div class="bb_bi_fill budget"
+                                         t-attf-style="width:{{p.budgetPct}}%"/>
+                                </div>
+                                <span class="bb_bi_val" t-esc="fmt(p.budget)"/>
+                            </div>
+                            <div class="bb_bi_bar_row">
+                                <span class="bb_bi_lbl">Spent</span>
+                                <div class="bb_bi_track">
+                                    <div t-attf-class="bb_bi_fill {{p.spentPct >= 90 ? 'danger' : 'spent'}}"
+                                         t-attf-style="width:{{p.spentPct}}%"/>
+                                </div>
+                                <span class="bb_bi_val" t-esc="fmt(p.spent)"/>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+            </div>
+
+            <!-- Tasks by Priority -->
+            <div class="bb_card">
+                <div class="bb_card_head">
+                    <i class="fa fa-flag"/> Tasks by Priority
+                </div>
+                <div class="bb_prio_chart">
+                    <t t-foreach="taskPriorityBars" t-as="b" t-key="b.label">
+                        <div class="bb_prio_row">
+                            <span class="bb_prio_lbl" t-esc="b.label"/>
+                            <div class="bb_prio_track">
+                                <div class="bb_prio_fill"
+                                     t-attf-style="width:{{b.pct}}%; background:{{b.color}}"/>
+                            </div>
+                            <span class="bb_prio_num" t-esc="b.count"/>
+                        </div>
+                    </t>
+                </div>
+
+                <!-- Overall progress -->
+                <div class="bb_overall">
+                    <div class="bb_overall_row">
+                        <span>Task Completion</span>
+                        <strong><t t-esc="taskDonePercent"/>%</strong>
+                    </div>
+                    <div class="bb_prog_track">
+                        <div class="bb_prog_fill tasks" t-attf-style="width:{{taskDonePercent}}%"/>
+                    </div>
+                    <div class="bb_overall_row" style="margin-top:16px">
+                        <span>Budget Used</span>
+                        <strong><t t-esc="budgetPercent"/>%</strong>
+                    </div>
+                    <div class="bb_prog_track">
+                        <div t-attf-class="bb_prog_fill {{budgetPercent >= 90 ? 'danger' : 'budget'}}"
+                             t-attf-style="width:{{budgetPercent}}%"/>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </t>
+</div>
 </t>
 
 </templates>

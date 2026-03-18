@@ -4,7 +4,7 @@ services:
   # Database
   # ──────────────────────────────────────────────
   db:
-    image: postgres:16.2-alpine
+    image: pgvector/pgvector:pg16
     container_name: project_management_db
     restart: always
     environment:
@@ -24,6 +24,20 @@ services:
       timeout: 5s
       retries: 5
 
+  # ──────────────────────────────────────────────
+  # Redis
+  # ──────────────────────────────────────────────
+  redis:
+    image: redis:7.0-alpine
+    container_name: project_management_redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123@}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - pm_network
+  # ──────────────────────────────────────────────
+  
   web:
     image: odoo:17.0
     container_name: project_management_web
@@ -42,6 +56,39 @@ services:
       - PASSWORD=admin123
     networks:
       - pm_network
+      
+  # ──────────────────────────────────────────────
+  # AI Agent (FastAPI)
+  # ──────────────────────────────────────────────
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    image: bb_pm_agent:latest
+    container_name: project_management_agent
+    restart: always
+    volumes:
+      - ./.env:/.env:ro
+    ports:
+      - "8001:8001"
+    environment:
+      - REDIS_HOST=redis
+      - DB_HOST=db
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
+      - MINIO_BUCKET=${MINIO_BUCKET:-file-storage}
+      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    networks:
+      - pm_network
+
   # ──────────────────────────────────────────────
   # Backend (FastAPI)
   # ──────────────────────────────────────────────
@@ -89,33 +136,26 @@ services:
   #   networks:
   #     - pm_network
 
-  # minio:
-  #   image: minio/minio
-  #   volumes:
-  #     - ./minio-data:/data
-  #   ports:
-  #     - "9000:9000"
-  #     - "9001:9001"
-  #   environment:
-  #     MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
-  #     MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
-  #   command: server /data --console-address ":9001"
-  #   networks:
-  #     - pm_network
-  # minio-bucket:
-  #   image: minio/mc
-  #   depends_on:
-  #     - minio
-  #   entrypoint: >
-  #     /bin/sh -c "
-  #     sleep 5;
-  #     mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
-  #     mc mb myminio/file-storage;
-  #     mc anonymous set public myminio/file-storage;
-  #     exit 0;
-  #     "
-  #   networks:
-  #     - pm_network
+  minio:
+    image: minio/minio
+    container_name: project_management_minio
+    restart: always
+    volumes:
+      - ./minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin123}"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pm_network
   # # ──────────────────────────────────────────────
   # # OpenSearch
   # # ──────────────────────────────────────────────

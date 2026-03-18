@@ -8,6 +8,10 @@ class BbProject(models.Model):
     _order = 'status, priority desc, name'
     _inherit = ['mail.thread', 'mail.activity.mixin']
 
+    _sql_constraints = [
+        ('code_uniq', 'UNIQUE(code)', 'Project code must be unique across all projects.'),
+    ]
+
     name = fields.Char(string='Project Name', required=True, tracking=True)
     code = fields.Char(string='Project Code', copy=False)
     owner_id = fields.Many2one(
@@ -19,6 +23,7 @@ class BbProject(models.Model):
         required=True, default=lambda self: self.env.company
     )
     customer_id = fields.Many2one('res.partner', string='Customer')
+    account_manager_id = fields.Many2one('res.users', string='Account Manager')
 
     status = fields.Selection([
         ('planned', 'Planned'),
@@ -40,7 +45,7 @@ class BbProject(models.Model):
     budget = fields.Monetary(string='Budget', currency_field='currency_id', tracking=True)
     currency_id = fields.Many2one(
         'res.currency', string='Currency',
-        default=lambda self: self.env.company.currency_id,
+        default=lambda self: self.env['res.currency'].search([('name', '=', 'VND')], limit=1) or self.env.company.currency_id,
     )
     description = fields.Html(string='Description')
 
@@ -51,18 +56,35 @@ class BbProject(models.Model):
     task_ids = fields.One2many(
         'bb.project.task', 'project_id', string='Tasks',
     )
+    tag_ids = fields.Many2many(
+        'bb.project.tag', 'bb_project_tag_rel', 'project_id', 'tag_id', string='Tags',
+    )
+    scope_ids = fields.One2many(
+        'bb.project.scope', 'project_id', string='Scope / Initial Backlog',
+    )
     milestone_ids = fields.One2many(
         'bb.project.milestone', 'project_id', string='Milestones',
     )
-    tag_ids = fields.Many2many(
-        'bb.project.tag', 'bb_project_tag_rel', 'project_id', 'tag_id', string='Tags',
+
+    # Estimated totals from scope items
+    estimated_total_hours = fields.Float(
+        string='Estimated Hours',
+        compute='_compute_estimated',
+        store=True,
+    )
+    estimated_total_cost = fields.Monetary(
+        string='Estimated Cost',
+        currency_field='currency_id',
+        compute='_compute_estimated',
+        store=True,
     )
 
     # Smart button counters
     task_count = fields.Integer(string='Tasks', compute='_compute_counts', store=True)
     member_count = fields.Integer(string='Members', compute='_compute_counts', store=True)
-    milestone_count = fields.Integer(string='Milestones', compute='_compute_counts', store=True)
     backlog_count = fields.Integer(string='Backlogs', compute='_compute_counts', store=True)
+    scope_count = fields.Integer(string='Scope Items', compute='_compute_counts', store=True)
+    milestone_count = fields.Integer(string='Milestones', compute='_compute_counts', store=True)
 
     # Financial summaries
     total_hours = fields.Float(
@@ -83,14 +105,20 @@ class BbProject(models.Model):
         store=True,
     )
 
-    @api.depends('task_ids', 'member_ids', 'milestone_ids')
+    @api.depends('scope_ids.estimated_hours', 'scope_ids.estimated_cost')
+    def _compute_estimated(self):
+        for rec in self:
+            rec.estimated_total_hours = sum(rec.scope_ids.mapped('estimated_hours'))
+            rec.estimated_total_cost = sum(rec.scope_ids.mapped('estimated_cost'))
+
+    @api.depends('task_ids', 'member_ids', 'scope_ids', 'milestone_ids')
     def _compute_counts(self):
         for rec in self:
             rec.task_count = len(rec.task_ids)
             rec.member_count = len(rec.member_ids)
-            rec.milestone_count = len(rec.milestone_ids)
-            # backlog count from all tasks
+            rec.scope_count = len(rec.scope_ids)
             rec.backlog_count = sum(len(t.backlog_ids) for t in rec.task_ids)
+            rec.milestone_count = len(rec.milestone_ids)
 
     @api.depends(
         'task_ids.backlog_ids.status',
@@ -158,6 +186,16 @@ class BbProject(models.Model):
             'type': 'ir.actions.act_window',
             'name': f'Work Logs — {self.name}',
             'res_model': 'bb.project.backlog',
+            'view_mode': 'tree,form',
+            'domain': [('project_id', '=', self.id)],
+            'context': {'default_project_id': self.id},
+        }
+
+    def action_view_milestones(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Milestones — {self.name}',
+            'res_model': 'bb.project.milestone',
             'view_mode': 'tree,form',
             'domain': [('project_id', '=', self.id)],
             'context': {'default_project_id': self.id},

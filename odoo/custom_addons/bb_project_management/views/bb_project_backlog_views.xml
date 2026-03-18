@@ -105,11 +105,92 @@
         </field>
     </record>
 
+    <!-- Backlog Search -->
+    <record id="view_bb_project_backlog_search" model="ir.ui.view">
+        <field name="name">bb.project.backlog.search</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <search string="Search Work Logs">
+                <field name="project_id"/>
+                <field name="task_id"/>
+                <field name="user_id"/>
+                <filter name="pending"  string="Pending"  domain="[('status','=','pending')]"/>
+                <filter name="approved" string="Approved" domain="[('status','=','approved')]"/>
+                <filter name="rejected" string="Rejected" domain="[('status','=','rejected')]"/>
+                <separator/>
+                <filter name="my_logs" string="My Logs" domain="[('user_id','=',uid)]"/>
+                <group expand="0" string="Group By">
+                    <filter name="grp_project" string="Project"  context="{'group_by': 'project_id'}"/>
+                    <filter name="grp_task"    string="Task"     context="{'group_by': 'task_id'}"/>
+                    <filter name="grp_user"    string="Member"   context="{'group_by': 'user_id'}"/>
+                    <filter name="grp_status"  string="Status"   context="{'group_by': 'status'}"/>
+                    <filter name="grp_date"    string="Work Date" context="{'group_by': 'work_date:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Backlog Kanban -->
+    <record id="view_bb_project_backlog_kanban" model="ir.ui.view">
+        <field name="name">bb.project.backlog.kanban</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="status" class="o_kanban_small_column">
+                <field name="project_id"/>
+                <field name="task_id"/>
+                <field name="user_id"/>
+                <field name="hours"/>
+                <field name="work_date"/>
+                <field name="total_cost_snapshot"/>
+                <field name="currency_id"/>
+                <field name="status"/>
+                <field name="description"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_card oe_kanban_global_click">
+                            <div class="oe_kanban_details">
+                                <div class="o_kanban_record_top">
+                                    <div class="o_kanban_record_headings">
+                                        <strong class="o_kanban_record_title">
+                                            <field name="task_id"/>
+                                        </strong>
+                                    </div>
+                                    <span t-attf-class="badge #{record.status.raw_value == 'approved' ? 'text-bg-success' : record.status.raw_value == 'rejected' ? 'text-bg-danger' : 'text-bg-warning'}">
+                                        <field name="status"/>
+                                    </span>
+                                </div>
+                                <div class="mt-1 text-muted small">
+                                    <i class="fa fa-folder-o"/> <field name="project_id"/>
+                                </div>
+                                <div class="o_kanban_record_bottom mt-2">
+                                    <div class="oe_kanban_bottom_left small">
+                                        <field name="user_id" widget="many2one_avatar_user"/>
+                                    </div>
+                                    <div class="oe_kanban_bottom_right small text-muted">
+                                        <i class="fa fa-clock-o"/> <field name="hours"/>h
+                                        &amp;nbsp;·&amp;nbsp;
+                                        <i class="fa fa-calendar"/> <field name="work_date"/>
+                                    </div>
+                                </div>
+                                <t t-if="record.description.raw_value">
+                                    <div class="mt-1 small text-muted text-truncate">
+                                        <field name="description"/>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
     <!-- Backlog Actions -->
     <record id="action_bb_project_backlog" model="ir.actions.act_window">
         <field name="name">All Work Logs</field>
         <field name="res_model">bb.project.backlog</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">tree,kanban,form</field>
+        <field name="context">{'search_default_grp_project': 1}</field>
     </record>
 
     <record id="action_bb_project_backlog_pending" model="ir.actions.act_window">

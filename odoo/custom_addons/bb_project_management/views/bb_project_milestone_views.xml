@@ -6,12 +6,20 @@
         <field name="name">bb.project.milestone.tree</field>
         <field name="model">bb.project.milestone</field>
         <field name="arch" type="xml">
-            <tree string="Milestones" editable="bottom" multi_edit="1" decoration-success="is_done" decoration-danger="not is_done and deadline and deadline &lt; context_today()">
+            <tree string="Milestones"
+                  decoration-success="status == 'done'"
+                  decoration-warning="status == 'in_progress'"
+                  decoration-muted="status == 'cancelled'">
                 <field name="name"/>
                 <field name="project_id"/>
-                <field name="deadline"/>
-                <field name="is_done" widget="boolean_toggle"/>
+                <field name="due_date" decoration-danger="due_date and due_date &lt; context_today() and status not in ('done','cancelled')"/>
                 <field name="task_count"/>
+                <field name="done_count"/>
+                <field name="completion_pct" widget="progressbar"/>
+                <field name="status" widget="badge"
+                       decoration-success="status == 'done'"
+                       decoration-warning="status == 'in_progress'"
+                       decoration-muted="status in ('draft','cancelled')"/>
             </tree>
         </field>
     </record>
@@ -23,39 +31,67 @@
         <field name="arch" type="xml">
             <form string="Milestone">
                 <header>
-                    <button name="action_mark_done" string="Mark Done" type="object" class="btn-primary" invisible="is_done"/>
-                    <button name="action_reset" string="Reopen" type="object" invisible="not is_done"/>
-                    <field name="is_done" widget="statusbar" statusbar_visible="0,1"/>
+                    <button name="action_set_in_progress" string="Start" type="object"
+                            class="btn-primary" invisible="status != 'draft'"/>
+                    <button name="action_set_done" string="Mark Done" type="object"
+                            class="btn-success" invisible="status not in ('draft','in_progress')"/>
+                    <button name="action_set_cancelled" string="Cancel" type="object"
+                            invisible="status in ('done','cancelled')"/>
+                    <button name="action_reopen" string="Reopen" type="object"
+                            invisible="status not in ('done','cancelled')"/>
+                    <field name="status" widget="statusbar"
+                           statusbar_visible="draft,in_progress,done"/>
                 </header>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button type="object" name="action_view_tasks"
+                                class="oe_stat_button" icon="fa-tasks">
+                            <field name="task_count" widget="statinfo" string="Tasks"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Milestone name..."/></h1>
+                    </div>
                     <group>
                         <group>
-                            <field name="name"/>
                             <field name="project_id"/>
-                            <field name="deadline"/>
+                            <field name="due_date"/>
                         </group>
                         <group>
-                            <field name="is_done"/>
+                            <field name="completion_pct" widget="progressbar"/>
                             <field name="task_count"/>
+                            <field name="done_count"/>
                         </group>
                     </group>
                     <group string="Description">
-                        <field name="description" nolabel="1"/>
+                        <field name="description" nolabel="1" placeholder="Milestone objectives..."/>
                     </group>
                     <notebook>
                         <page string="Tasks" name="tasks">
-                            <field name="task_ids" readonly="1">
-                                <tree editable="bottom" multi_edit="1">
+                            <field name="task_ids" context="{'default_milestone_id': active_id, 'default_project_id': project_id}">
+                                <tree editable="bottom"
+                                      decoration-success="status == 'done'"
+                                      decoration-info="status == 'review'"
+                                      decoration-warning="status == 'in_progress'">
                                     <field name="name"/>
-                                    <field name="assignee_id"/>
-                                    <field name="status"/>
-                                    <field name="priority"/>
-                                    <field name="deadline"/>
+                                    <field name="assignee_id" widget="many2one_avatar_user"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="end_at"/>
+                                    <field name="days_remaining"
+                                           decoration-danger="days_remaining &lt; 0 and status != 'done'"
+                                           decoration-warning="days_remaining &lt;= 3 and days_remaining &gt;= 0 and status != 'done'"/>
+                                    <field name="status" widget="badge"
+                                           decoration-success="status == 'done'"
+                                           decoration-info="status == 'review'"
+                                           decoration-warning="status == 'in_progress'"
+                                           decoration-muted="status == 'todo'"/>
+                                    <field name="total_hours"/>
                                 </tree>
                             </field>
                         </page>
                     </notebook>
                 </sheet>
+                <chatter/>
             </form>
         </field>
     </record>
