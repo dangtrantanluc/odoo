@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ Tree View ═══════════════ -->
+    <record id="view_bbsw_employee_tree" model="ir.ui.view">
+        <field name="name">hr.employee.bbsw.tree</field>
+        <field name="model">hr.employee</field>
+        <field name="priority">1</field>
+        <field name="arch" type="xml">
+            <tree string="Danh sách nhân viên"
+                  decoration-muted="work_status == 'RESIGNED'"
+                  decoration-warning="work_status == 'PROBATION'">
+                <field name="employee_code" string="Mã NV"/>
+                <field name="name" string="Họ tên"/>
+                <field name="work_status" widget="badge"
+                       decoration-success="work_status == 'WORKING'"
+                       decoration-warning="work_status == 'PROBATION'"
+                       decoration-danger="work_status == 'RESIGNED'"/>
+                <field name="level_id" string="Cấp bậc"/>
+                <field name="business_unit_id" string="Đơn vị"/>
+                <field name="work_phone" string="Điện thoại"/>
+                <field name="work_email" string="Email"/>
+                <field name="actual_salary" string="Lương" widget="monetary"
+                       options="{'currency_field': 'vnd_currency_id'}"/>
+                <field name="contract_type" string="Loại HĐ"/>
+                <field name="vnd_currency_id" column_invisible="1"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Form View ═══════════════ -->
+    <record id="view_bbsw_employee_form" model="ir.ui.view">
+        <field name="name">hr.employee.bbsw.form</field>
+        <field name="model">hr.employee</field>
+        <field name="priority">1</field>
+        <field name="arch" type="xml">
+            <form string="Nhân viên">
+                <sheet>
+                    <field name="image_1920" widget="image" class="oe_avatar"/>
+                    <div class="oe_title">
+                        <label for="employee_code" string="Mã nhân viên"/>
+                        <h2>
+                            <field name="employee_code" placeholder="BB001"/>
+                        </h2>
+                        <label for="name" string="Họ và tên"/>
+                        <h1>
+                            <field name="name" placeholder="Họ và tên"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Thông tin công việc">
+                            <field name="work_status"/>
+                            <field name="level_id"/>
+                            <field name="business_unit_id"/>
+                            <field name="company_id" invisible="1"/>
+                            <field name="job_id" string="Vị trí công việc"/>
+                            <field name="contract_type"/>
+                            <field name="contract_start_date"/>
+                            <field name="contract_end_date"/>
+                        </group>
+                        <group string="Lương &amp; Liên hệ">
+                            <field name="actual_salary"/>
+                            <field name="work_phone" string="Điện thoại công việc"/>
+                            <field name="work_email" string="Email công việc"/>
+                            <field name="mobile_phone" string="Điện thoại di động"/>
+                        </group>
+                    </group>
+                    <group string="Thông tin cá nhân">
+                        <group>
+                            <field name="birthday" string="Ngày sinh"/>
+                            <field name="private_email" string="Email cá nhân"/>
+                            <field name="ssnid" string="CCCD/CMND"/>
+                        </group>
+                        <group>
+                            <field name="private_street" string="Địa chỉ"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Search View ═══════════════ -->
+    <record id="view_bbsw_employee_search" model="ir.ui.view">
+        <field name="name">hr.employee.bbsw.search</field>
+        <field name="model">hr.employee</field>
+        <field name="arch" type="xml">
+            <search string="Tìm kiếm nhân viên">
+                <field name="name"/>
+                <field name="employee_code"/>
+                <field name="business_unit_id"/>
+                <filter name="filter_working" string="Đang làm việc" domain="[('work_status', '=', 'WORKING')]"/>
+                <filter name="filter_probation" string="Thử việc" domain="[('work_status', '=', 'PROBATION')]"/>
+                <filter name="filter_resigned" string="Đã nghỉ" domain="[('work_status', '=', 'RESIGNED')]"/>
+                <separator/>
+                <filter name="group_bu" string="Đơn vị" context="{'group_by': 'business_unit_id'}"/>
+                <filter name="group_level" string="Cấp bậc" context="{'group_by': 'level_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Action: Nhân viên ═══════════════ -->
+    <record id="action_bbsw_employee" model="ir.actions.act_window">
+        <field name="name">Danh sách nhân viên</field>
+        <field name="res_model">hr.employee</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_bbsw_employee_search"/>
+        <field name="context">{'search_default_filter_working': 1}</field>
+    </record>
+
+    <!-- ═══════════════ Action: Phòng ban ═══════════════ -->
+    <record id="action_bbsw_department" model="ir.actions.act_window">
+        <field name="name">Phòng ban</field>
+        <field name="res_model">hr.department</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <!-- ═══════════════ Action: Báo cáo nhân viên ═══════════════ -->
+    <record id="action_bbsw_employee_report" model="ir.actions.act_window">
+        <field name="name">Phân tích nhân viên</field>
+        <field name="res_model">hr.employee</field>
+        <field name="view_mode">pivot,graph,tree</field>
+        <field name="search_view_id" ref="view_bbsw_employee_search"/>
+        <field name="context">{'search_default_group_bu': 1}</field>
+    </record>
+
+    <!-- ═══════════════ Action: Vị trí công việc ═══════════════ -->
+    <record id="action_bbsw_job_position" model="ir.actions.act_window">
+        <field name="name">Vị trí công việc</field>
+        <field name="res_model">hr.job</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <!-- ═══════════════ Action: Cấp bậc ═══════════════ -->
+    <record id="action_bbsw_employee_level" model="ir.actions.act_window">
+        <field name="name">Cấp bậc nhân viên</field>
+        <field name="res_model">bbsw.employee.level</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+</odoo>

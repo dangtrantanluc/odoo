@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_payroll_preview_form" model="ir.ui.view">
+        <field name="name">bbsw.payroll.preview.form</field>
+        <field name="model">bbsw.payroll</field>
+        <field name="arch" type="xml">
+            <form string="Xem trước phiếu lương" duplicate="false" create="false" edit="false">
+                <header>
+                    <button name="action_print_payslip" string="🖨 Xuất PDF" type="object"
+                            class="btn-primary"/>
+                    <button string="Đóng" class="btn-secondary" special="cancel"/>
+                </header>
+                <sheet>
+                    <field name="vnd_currency_id" invisible="1"/>
+
+                    <!-- Tiêu đề -->
+                    <div class="text-center mb-3">
+                        <h3 class="text-uppercase fw-bold" style="letter-spacing:2px; color:#1f3864;">
+                            PHIẾU LƯƠNG
+                        </h3>
+                        <div class="text-muted">Kỳ lương: <strong><field name="period_display" readonly="1"/></strong></div>
+                    </div>
+
+                    <!-- Thông tin nhân viên -->
+                    <group>
+                        <group string="Nhân viên">
+                            <field name="employee_id" readonly="1"/>
+                            <field name="department_id" readonly="1"/>
+                            <field name="contract_type" readonly="1"/>
+                        </group>
+                        <group string="Kỳ lương">
+                            <field name="name" string="Mã phiếu" readonly="1"/>
+                            <field name="period_month" readonly="1"/>
+                            <field name="period_year" readonly="1"/>
+                            <field name="standard_days" readonly="1"/>
+                            <field name="state" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <!-- I. Thu nhập -->
+                    <group string="I. THU NHẬP">
+                        <group string="Ngày công">
+                            <field name="base_salary" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="daily_rate" string="L3 - Đơn giá/ngày" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="worked_days" string="L4 - Ngày công thực tế (X)" readonly="1"/>
+                            <field name="time_salary" string="L5 - Lương thời gian" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="trial_days" string="L6 - Ngày thử việc (TV)" readonly="1"/>
+                            <field name="trial_salary" string="L7 - Lương thử việc" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="leave_days" string="L8 - Ngày phép/lễ/chính đáng" readonly="1"/>
+                            <field name="leave_salary" string="L9 - Lương phép/lễ" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="compensatory_days" string="L10 - Ngày nghỉ bù" readonly="1"/>
+                            <field name="compensatory_salary" string="L11 - Lương nghỉ bù" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                        </group>
+                        <group string="Tăng ca &amp; Thưởng">
+                            <field name="overtime_days" string="L12 - Ngày tăng ca" readonly="1"/>
+                            <field name="overtime_salary" string="L13 - Lương tăng ca" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="bonus_sales" string="L14 - Thưởng doanh số" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="allowance" string="L15 - Phụ cấp khác" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                        </group>
+                        <group colspan="2">
+                            <field name="total_monthly_salary" string="L18 - Tổng lương tháng"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1" class="fw-bold"/>
+                            <field name="total_gross" string="L19 - Tổng thu nhập (Gross)"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1" class="fw-bold text-success"/>
+                        </group>
+                    </group>
+
+                    <!-- II. Bảo hiểm NV -->
+                    <group string="II. BẢO HIỂM (Nhân viên đóng)">
+                        <group>
+                            <field name="insurance_base" string="L22 - Lương đóng BH" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="bhxh_employee" string="L24 - BHXH (8%)" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="bhyt_employee" string="L25 - BHYT (1.5%)" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="bhtn_employee" string="L26 - BHTN (1%)" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}" readonly="1"/>
+                            <field name="total_insurance_employee" string="L23 - Tổng BH NV"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1" class="fw-bold text-danger"/>
+                        </group>
+                    </group>
+
+                    <!-- III. Thuế TNCN -->
+                    <group string="III. THUẾ THU NHẬP CÁ NHÂN">
+                        <group>
+                            <field name="personal_deduction" string="L29 - Giảm trừ bản thân"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1"/>
+                            <field name="dependents" string="Số người phụ thuộc" readonly="1"/>
+                            <field name="dependent_deduction" string="L30 - Giảm trừ NPT"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1"/>
+                            <field name="taxable_income" string="L31 - Thu nhập tính thuế"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1"/>
+                            <field name="personal_income_tax" string="L28 - Thuế TNCN"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1" class="fw-bold text-danger"/>
+                        </group>
+                    </group>
+
+                    <!-- IV. Kết quả -->
+                    <group string="IV. KẾT QUẢ">
+                        <group string="Khấu trừ thêm">
+                            <field name="salary_deduction" string="L17 - Trừ lương khác"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1"/>
+                            <field name="advance_payment" string="L21 - Tạm ứng"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1"/>
+                            <field name="company_hold" string="L20 - Công ty giữ lại"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1"/>
+                        </group>
+                        <group string="Thực nhận">
+                            <field name="net_salary" string="L32 - Nhân viên THỰC NHẬN"
+                                   widget="monetary" options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="1" class="fw-bold text-success" style="font-size:16px;"/>
+                        </group>
+                    </group>
+
+                    <group invisible="not note">
+                        <field name="note" string="Ghi chú" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_payroll_preview" model="ir.actions.act_window">
+        <field name="name">Xem trước phiếu lương</field>
+        <field name="res_model">bbsw.payroll</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_payroll_preview_form"/>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

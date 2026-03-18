@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ Root Menu ═══════════════ -->
+    <menuitem id="menu_thuchi_root"
+              name="Thu Chi"
+              sequence="10"
+              web_icon="bbsw_thuchi,static/description/icon.png"/>
+
+    <!-- ═══════════════ Sub Menus ═══════════════ -->
+    <menuitem id="menu_thuchi_dashboard"
+              name="Bảng điều khiển"
+              parent="menu_thuchi_root"
+              action="action_thuchi_dashboard"
+              sequence="5"/>
+
+    <menuitem id="menu_thuchi_records"
+              name="Bản ghi Thu Chi"
+              parent="menu_thuchi_root"
+              action="action_thuchi_record"
+              sequence="10"/>
+
+    <menuitem id="menu_thuchi_project"
+              name="Dự án"
+              parent="menu_thuchi_root"
+              action="action_thuchi_project"
+              sequence="20"/>
+
+    <!-- ═══════════════ Nhân sự (Root App riêng) ═══════════════ -->
+    <menuitem id="menu_nhansu_root"
+              name="Nhân Sự"
+              sequence="20"
+              web_icon="hr,static/description/icon.png"/>
+
+    <menuitem id="menu_nhansu_employee"
+              name="Nhân viên"
+              parent="menu_nhansu_root"
+              action="action_bbsw_employee"
+              sequence="10"/>
+
+    <menuitem id="menu_nhansu_department"
+              name="Phòng ban"
+              parent="menu_nhansu_root"
+              action="action_bbsw_department"
+              sequence="20"/>
+
+    <!-- Báo cáo -->
+    <menuitem id="menu_nhansu_baocao"
+              name="Báo cáo"
+              parent="menu_nhansu_root"
+              sequence="80"/>
+
+    <menuitem id="menu_nhansu_report_employee"
+              name="Phân tích nhân viên"
+              parent="menu_nhansu_baocao"
+              action="action_bbsw_employee_report"
+              sequence="10"/>
+
+    <!-- Cấu hình -->
+    <menuitem id="menu_nhansu_cauhinh"
+              name="Cấu hình"
+              parent="menu_nhansu_root"
+              sequence="90"/>
+
+    <menuitem id="menu_nhansu_job"
+              name="Vị trí công việc"
+              parent="menu_nhansu_cauhinh"
+              action="action_bbsw_job_position"
+              sequence="10"/>
+
+    <menuitem id="menu_nhansu_level"
+              name="Cấp bậc"
+              parent="menu_nhansu_cauhinh"
+              action="action_bbsw_employee_level"
+              sequence="20"/>
+
+    <menuitem id="menu_nhansu_bu"
+              name="Đơn vị kinh doanh"
+              parent="menu_nhansu_cauhinh"
+              action="action_business_unit"
+              sequence="30"/>
+
+    <menuitem id="menu_thuchi_config"
+              name="Cấu hình"
+              parent="menu_thuchi_root"
+              sequence="90"/>
+
+    <menuitem id="menu_thuchi_category"
+              name="Danh mục"
+              parent="menu_thuchi_config"
+              action="action_thuchi_category"
+              sequence="10"/>
+
+    <menuitem id="menu_business_unit"
+              name="Đơn vị kinh doanh"
+              parent="menu_thuchi_config"
+              action="action_business_unit"
+              sequence="20"/>
+
+    <menuitem id="menu_payment_method"
+              name="Phương thức thanh toán"
+              parent="menu_thuchi_config"
+              action="action_payment_method"
+              sequence="30"/>
+
+    <menuitem id="menu_thuchi_partner"
+              name="Đối tác"
+              parent="menu_thuchi_config"
+              action="action_thuchi_partner"
+              sequence="40"/>
+
+    <menuitem id="menu_home_apps"
+              name="Ứng dụng trang chủ"
+              parent="menu_thuchi_config"
+              action="action_home_app"
+              sequence="90"/>
+
+</odoo>

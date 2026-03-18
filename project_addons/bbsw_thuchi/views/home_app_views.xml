@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_home_app_list" model="ir.ui.view">
+        <field name="name">bbsw.home.app.list</field>
+        <field name="model">bbsw.home.app</field>
+        <field name="arch" type="xml">
+            <tree string="Ứng dụng trang chủ" editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="url"/>
+                <field name="icon"/>
+                <field name="gradient"/>
+                <field name="groups_id" widget="many2many_tags"/>
+                <field name="active"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_home_app_form" model="ir.ui.view">
+        <field name="name">bbsw.home.app.form</field>
+        <field name="model">bbsw.home.app</field>
+        <field name="arch" type="xml">
+            <form string="Ứng dụng trang chủ">
+                <sheet>
+                    <group>
+                        <group string="Thông tin">
+                            <field name="name"/>
+                            <field name="url"/>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Hiển thị">
+                            <field name="icon"/>
+                            <field name="gradient"/>
+                            <field name="groups_id" widget="many2many_tags"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_home_app" model="ir.actions.act_window">
+        <field name="name">Ứng dụng trang chủ</field>
+        <field name="res_model">bbsw.home.app</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+</odoo>

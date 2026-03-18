@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ Tree View ═══════════════ -->
+    <record id="view_bbsw_payroll_tree" model="ir.ui.view">
+        <field name="name">bbsw.payroll.tree</field>
+        <field name="model">bbsw.payroll</field>
+        <field name="arch" type="xml">
+            <tree string="Bảng lương"
+                  decoration-success="state == 'paid'"
+                  decoration-info="state == 'confirmed'"
+                  decoration-muted="state == 'draft'">
+                <field name="name" string="Mã phiếu"/>
+                <field name="employee_id" string="Nhân viên"/>
+                <field name="department_id" string="Phòng ban"/>
+                <field name="period_display" string="Kỳ lương"/>
+                <field name="worked_days" string="Ngày công"/>
+                <field name="total_gross" string="Lương gộp" widget="monetary"
+                       options="{'currency_field': 'vnd_currency_id'}"/>
+                <field name="total_insurance_employee" string="BH NV" widget="monetary"
+                       options="{'currency_field': 'vnd_currency_id'}"/>
+                <field name="personal_income_tax" string="Thuế TNCN" widget="monetary"
+                       options="{'currency_field': 'vnd_currency_id'}"/>
+                <field name="net_salary" string="Thực nhận" widget="monetary"
+                       options="{'currency_field': 'vnd_currency_id'}"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'paid'"
+                       decoration-info="state == 'confirmed'"
+                       decoration-muted="state == 'draft'"/>
+                <field name="vnd_currency_id" column_invisible="1"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Form View ═══════════════ -->
+    <record id="view_bbsw_payroll_form" model="ir.ui.view">
+        <field name="name">bbsw.payroll.form</field>
+        <field name="model">bbsw.payroll</field>
+        <field name="arch" type="xml">
+            <form string="Phiếu lương">
+                <header>
+                    <button name="action_preview_payslip" string="In phiếu lương" type="object"
+                            class="btn-secondary" icon="fa-print"/>
+                    <button name="action_recompute_days" string="↻ Tính lại ngày công" type="object"
+                            invisible="state != 'draft'"/>
+                    <button name="action_confirm" string="Xác nhận" type="object"
+                            class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_pay" string="Đã thanh toán" type="object"
+                            class="btn-success" invisible="state != 'confirmed'"/>
+                    <button name="action_reset_draft" string="Đặt lại nháp" type="object"
+                            invisible="state == 'paid'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,confirmed,paid"/>
+                </header>
+                <sheet>
+                    <field name="vnd_currency_id" invisible="1"/>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+
+                    <!-- Thông tin chung -->
+                    <group>
+                        <group string="Nhân viên">
+                            <field name="employee_id" readonly="state != 'draft'"/>
+                            <field name="department_id"/>
+                            <field name="contract_type" readonly="1"/>
+                        </group>
+                        <group string="Kỳ lương">
+                            <field name="period_month" readonly="state != 'draft'"/>
+                            <field name="period_year" readonly="state != 'draft'"/>
+                            <field name="standard_days" readonly="state != 'draft'"/>
+                        </group>
+                    </group>
+
+                    <!-- Phần 1: Thu nhập -->
+                    <group string="I. THU NHẬP">
+                        <group string="Ngày công">
+                            <field name="daily_rate" string="L3 - Đơn giá/ngày" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="worked_days" string="L4 - Ngày công thực tế (X)"/>
+                            <field name="time_salary" string="L5 - Lương thời gian" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="trial_days" string="L6 - Ngày thử việc (TV)"/>
+                            <field name="trial_salary" string="L7 - Lương thử việc" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="leave_days" string="L8 - Ngày phép/lễ/chính đáng (P,NL,BH,CĐ,CT)"/>
+                            <field name="leave_salary" string="L9 - Lương phép/lễ/chính đáng" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="compensatory_days" string="L10 - Ngày nghỉ bù hưởng lương (NB)"/>
+                            <field name="compensatory_salary" string="L11 - Lương nghỉ bù" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                        </group>
+                        <group string="Tăng ca &amp; Thưởng">
+                            <field name="overtime_days" readonly="state != 'draft'"/>
+                            <field name="overtime_salary" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="bonus_sales" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="state != 'draft'"/>
+                            <field name="allowance" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="state != 'draft'"/>
+                        </group>
+                        <group colspan="2">
+                            <field name="total_monthly_salary" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   class="fw-bold"/>
+                            <field name="total_gross" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   class="fw-bold text-success"/>
+                        </group>
+                    </group>
+
+                    <!-- Phần 2: Bảo hiểm -->
+                    <group string="II. BẢO HIỂM (Chỉ áp dụng hợp đồng chính thức)">
+                        <group string="Nhân viên đóng">
+                            <field name="insurance_base" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="bhxh_employee" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="bhyt_employee" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="bhtn_employee" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="total_insurance_employee" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   class="fw-bold"/>
+                        </group>
+                        <group string="Công ty đóng">
+                            <field name="bhxh_company" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="bhyt_company" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="bhtn_company" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="total_insurance_company" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   class="fw-bold"/>
+                        </group>
+                    </group>
+
+                    <!-- Phần 3: Thuế TNCN -->
+                    <group string="III. THUẾ THU NHẬP CÁ NHÂN">
+                        <group string="Giảm trừ">
+                            <field name="dependents" readonly="state != 'draft'"/>
+                            <field name="personal_deduction" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="state != 'draft'"/>
+                            <field name="dependent_deduction" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                        </group>
+                        <group string="Tính thuế">
+                            <field name="taxable_income" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="personal_income_tax" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   class="fw-bold text-danger"/>
+                        </group>
+                    </group>
+
+                    <!-- Phần 4: Kết quả -->
+                    <group string="IV. KẾT QUẢ">
+                        <group string="Khấu trừ thêm">
+                            <field name="salary_deduction" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="state != 'draft'"/>
+                            <field name="advance_payment" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="state != 'draft'"/>
+                            <field name="company_hold" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   readonly="state != 'draft'"/>
+                        </group>
+                        <group string="Tổng kết">
+                            <field name="net_salary" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   class="fw-bold text-success"/>
+                            <field name="company_cost" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"
+                                   class="fw-bold"/>
+                        </group>
+                    </group>
+
+                    <group>
+                        <field name="note" placeholder="Ghi chú..." readonly="state != 'draft'"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Search View ═══════════════ -->
+    <record id="view_bbsw_payroll_search" model="ir.ui.view">
+        <field name="name">bbsw.payroll.search</field>
+        <field name="model">bbsw.payroll</field>
+        <field name="arch" type="xml">
+            <search string="Tìm kiếm bảng lương">
+                <field name="employee_id" string="Nhân viên"/>
+                <field name="department_id" string="Phòng ban"/>
+                <filter string="Nháp" name="draft" domain="[('state','=','draft')]"/>
+                <filter string="Đã xác nhận" name="confirmed" domain="[('state','=','confirmed')]"/>
+                <filter string="Đã thanh toán" name="paid" domain="[('state','=','paid')]"/>
+                <separator/>
+                <group expand="0" string="Nhóm theo">
+                    <filter string="Nhân viên" name="group_employee" context="{'group_by': 'employee_id'}"/>
+                    <filter string="Phòng ban" name="group_dept" context="{'group_by': 'department_id'}"/>
+                    <filter string="Kỳ lương" name="group_period" context="{'group_by': 'period_display'}"/>
+                    <filter string="Trạng thái" name="group_state" context="{'group_by': 'state'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Pivot View ═══════════════ -->
+    <record id="view_bbsw_payroll_pivot" model="ir.ui.view">
+        <field name="name">bbsw.payroll.pivot</field>
+        <field name="model">bbsw.payroll</field>
+        <field name="arch" type="xml">
+            <pivot string="Báo cáo lương">
+                <field name="department_id" type="row"/>
+                <field name="period_display" type="col"/>
+                <field name="net_salary" type="measure"/>
+                <field name="total_gross" type="measure"/>
+                <field name="company_cost" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Action ═══════════════ -->
+    <record id="action_bbsw_payroll" model="ir.actions.act_window">
+        <field name="name">Bảng lương</field>
+        <field name="res_model">bbsw.payroll</field>
+        <field name="view_mode">tree,form,pivot</field>
+    </record>
+
+    <!-- ═══════════════ Menus ═══════════════ -->
+    <menuitem id="menu_tinhluong_root"
+              name="Tính Lương"
+              web_icon="hr_attendance,static/description/icon.png"
+              sequence="13"/>
+
+    <menuitem id="menu_tinhluong_list"
+              name="Bảng lương"
+              parent="menu_tinhluong_root"
+              action="action_bbsw_payroll"
+              sequence="1"/>
+
+    <menuitem id="menu_tinhluong_report"
+              name="Báo cáo"
+              parent="menu_tinhluong_root"
+              sequence="5"/>
+
+    <menuitem id="menu_tinhluong_pivot"
+              name="Tổng hợp lương"
+              parent="menu_tinhluong_report"
+              action="action_bbsw_payroll"
+              sequence="1"/>
+
+</odoo>

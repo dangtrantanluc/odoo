@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ Tree View ═══════════════ -->
+    <record id="view_thuchi_record_tree" model="ir.ui.view">
+        <field name="name">bbsw.thuchi.record.tree</field>
+        <field name="model">bbsw.thuchi.record</field>
+        <field name="arch" type="xml">
+            <tree decoration-success="type == 'thu'" decoration-danger="type == 'chi'"
+                  decoration-info="type == 'vay'" decoration-warning="type == 'hoan_ung'">
+                <field name="transaction_code"/>
+                <field name="date"/>
+                <field name="name"/>
+                <field name="type"/>
+                <field name="category_id"/>
+                <field name="business_unit_id" optional="show"/>
+                <field name="project_id"/>
+                <field name="partner_id" optional="show"/>
+                <field name="employee_id" optional="show"/>
+                <field name="payment_method_id" optional="show"/>
+                <field name="amount"/>
+                <field name="signed_amount" string="Số dư (ròng)" sum="Số dư ròng" optional="show"/>
+                <field name="payment_status" widget="badge"
+                       decoration-success="payment_status == 'paid'"
+                       decoration-warning="payment_status == 'unpaid'"/>
+                <field name="state" widget="badge"
+                       decoration-muted="state == 'draft'"
+                       decoration-info="state == 'pending'"
+                       decoration-success="state == 'approved'"
+                       decoration-danger="state in ('rejected', 'cancelled')"/>
+                <field name="user_id" widget="many2one_avatar"/>
+                <button name="action_submit" type="object" string="Gửi duyệt" icon="fa-paper-plane"
+                        invisible="state != 'draft'" title="Gửi duyệt"/>
+                <button name="action_approve" type="object" string="Duyệt" icon="fa-check"
+                        invisible="state != 'pending'" title="Duyệt"
+                        groups="base.group_system"/>
+                <button name="action_cancel" type="object" string="Hủy" icon="fa-times"
+                        invisible="state not in ('pending', 'approved')" title="Hủy"/>
+                <button name="action_draft" type="object" string="Về nháp" icon="fa-undo"
+                        invisible="state not in ('rejected', 'cancelled')" title="Về nháp"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Form View ═══════════════ -->
+    <record id="view_thuchi_record_form" model="ir.ui.view">
+        <field name="name">bbsw.thuchi.record.form</field>
+        <field name="model">bbsw.thuchi.record</field>
+        <field name="arch" type="xml">
+            <form string="Bản ghi Thu Chi">
+                <header>
+                    <button name="action_submit" type="object" string="Gửi duyệt"
+                            class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_approve" type="object" string="Duyệt"
+                            class="btn-primary"
+                            invisible="state != 'pending'"
+                            groups="base.group_system"/>
+                    <button name="action_reject" type="object" string="Từ chối"
+                            invisible="state != 'pending'"
+                            groups="base.group_system"/>
+                    <button name="action_cancel" type="object" string="Hủy"
+                            invisible="state not in ('draft', 'pending')"/>
+                    <button name="action_draft" type="object" string="Về nháp"
+                            invisible="state not in ('rejected', 'cancelled')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,pending,approved"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="transaction_code"/>
+                        <h1>
+                            <field name="transaction_code" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Thông tin chính">
+                            <field name="name"/>
+                            <field name="date"/>
+                            <field name="type"/>
+                            <field name="category_id"
+                                   domain="[('type', '=', type)]"/>
+                            <field name="amount"/>
+                        </group>
+                        <group string="Dự án &amp; Thanh toán">
+                            <field name="business_unit_id"/>
+                            <field name="project_id"/>
+                            <field name="payment_method_id"/>
+                            <field name="payment_status"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Đối tượng liên quan">
+                            <field name="object_type"/>
+                            <field name="partner_id"
+                                   invisible="object_type != 'partner'"/>
+                            <field name="employee_id"
+                                   invisible="object_type != 'employee'"/>
+                            <field name="student_name"
+                                   invisible="object_type != 'student'"/>
+                            <field name="other_name"
+                                   invisible="object_type != 'other'"/>
+                        </group>
+                        <group string="Người tạo">
+                            <field name="user_id"/>
+                        </group>
+                    </group>
+                    <group string="Lý do từ chối" invisible="state != 'rejected'">
+                        <field name="rejection_reason" nolabel="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Ghi chú">
+                            <field name="note"/>
+                        </page>
+                        <page string="Chứng từ đính kèm">
+                            <div class="bbsw-paste-zone" tabindex="0"
+                                 style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:10px 16px;border:2px dashed #adb5bd;border-radius:6px;background:#f8f9fa;color:#6c757d;font-size:13px;cursor:pointer;outline:none;"
+                                 onfocus="this.style.borderColor='#0d6efd';this.style.background='#e8f0fe';"
+                                 onblur="this.style.borderColor='#adb5bd';this.style.background='#f8f9fa';">
+                                <i class="fa fa-clipboard" style="font-size:16px;"/>
+                                <span>Nhấn vào đây rồi dán ảnh / file <kbd style="background:#dee2e6;border:1px solid #adb5bd;border-radius:3px;padding:1px 6px;font-size:11px;">Ctrl+V</kbd></span>
+                            </div>
+                            <field name="attachment_ids" widget="many2many_binary" string="Chứng từ đính kèm"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Search View ═══════════════ -->
+    <record id="view_thuchi_record_search" model="ir.ui.view">
+        <field name="name">bbsw.thuchi.record.search</field>
+        <field name="model">bbsw.thuchi.record</field>
+        <field name="arch" type="xml">
+            <search string="Tìm kiếm Thu Chi">
+                <field name="transaction_code"/>
+                <field name="name"/>
+                <field name="category_id"/>
+                <field name="project_id"/>
+                <field name="partner_id"/>
+                <field name="employee_id"/>
+                <!-- Loại -->
+                <filter name="filter_thu" string="Thu" domain="[('type', '=', 'thu')]"/>
+                <filter name="filter_chi" string="Chi" domain="[('type', '=', 'chi')]"/>
+                <filter name="filter_vay" string="Vay" domain="[('type', '=', 'vay')]"/>
+                <filter name="filter_hoan_ung" string="Hoàn ứng" domain="[('type', '=', 'hoan_ung')]"/>
+                <separator/>
+                <!-- Trạng thái duyệt -->
+                <filter name="filter_approved" string="Đã duyệt" domain="[('state', '=', 'approved')]"/>
+                <filter name="filter_draft" string="Nháp" domain="[('state', '=', 'draft')]"/>
+                <filter name="filter_pending" string="Chờ duyệt" domain="[('state', '=', 'pending')]"/>
+                <filter name="filter_rejected" string="Từ chối" domain="[('state', '=', 'rejected')]"/>
+                <separator/>
+                <!-- Thanh toán -->
+                <filter name="filter_unpaid" string="Chưa TT" domain="[('payment_status', '=', 'unpaid')]"/>
+                <filter name="filter_paid" string="Đã TT" domain="[('payment_status', '=', 'paid')]"/>
+                <filter name="filter_advance" string="Tạm ứng" domain="[('is_advance', '=', True)]"/>
+                <separator/>
+                <!-- Group by -->
+                <filter name="group_type" string="Loại" context="{'group_by': 'type'}"/>
+                <filter name="group_category" string="Danh mục" context="{'group_by': 'category_id'}"/>
+                <filter name="group_bu" string="Đơn vị" context="{'group_by': 'business_unit_id'}"/>
+                <filter name="group_project" string="Dự án" context="{'group_by': 'project_id'}"/>
+                <filter name="group_month" string="Tháng" context="{'group_by': 'date:month'}"/>
+                <filter name="group_user" string="Người tạo" context="{'group_by': 'user_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Pivot View ═══════════════ -->
+    <record id="view_thuchi_record_pivot" model="ir.ui.view">
+        <field name="name">bbsw.thuchi.record.pivot</field>
+        <field name="model">bbsw.thuchi.record</field>
+        <field name="arch" type="xml">
+            <pivot string="Bảng điều khiển Thu Chi" disable_linking="0">
+                <field name="type" type="row"/>
+                <field name="date" type="col" interval="month"/>
+                <field name="signed_amount" type="measure" string="Số tiền (ròng)"/>
+                <field name="amount" type="measure" string="Số tiền"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Graph View ═══════════════ -->
+    <record id="view_thuchi_record_graph" model="ir.ui.view">
+        <field name="name">bbsw.thuchi.record.graph</field>
+        <field name="model">bbsw.thuchi.record</field>
+        <field name="arch" type="xml">
+            <graph string="Biểu đồ Thu Chi" type="bar" stacked="0">
+                <field name="date" type="row" interval="month"/>
+                <field name="type" type="col"/>
+                <field name="amount" type="measure" string="Số tiền"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Dashboard Action ═══════════════ -->
+    <record id="action_thuchi_dashboard" model="ir.actions.act_window">
+        <field name="name">Bảng điều khiển</field>
+        <field name="res_model">bbsw.thuchi.record</field>
+        <field name="view_mode">graph,pivot,tree</field>
+        <field name="search_view_id" ref="view_thuchi_record_search"/>
+        <field name="domain">[('state', '=', 'approved')]</field>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- ═══════════════ Action ═══════════════ -->
+    <record id="action_thuchi_record" model="ir.actions.act_window">
+        <field name="name">Thu Chi</field>
+        <field name="res_model">bbsw.thuchi.record</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_thuchi_record_search"/>
+        <field name="context">{}</field>
+    </record>
+
+</odoo>

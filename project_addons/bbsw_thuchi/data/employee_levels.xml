@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="employee_level_lv1" model="bbsw.employee.level">
+        <field name="name">Nhân viên</field>
+        <field name="code">LV1</field>
+        <field name="sequence">1</field>
+    </record>
+    <record id="employee_level_lv2" model="bbsw.employee.level">
+        <field name="name">Trưởng nhóm</field>
+        <field name="code">LV2</field>
+        <field name="sequence">2</field>
+    </record>
+    <record id="employee_level_lv3" model="bbsw.employee.level">
+        <field name="name">Trưởng phòng</field>
+        <field name="code">LV3</field>
+        <field name="sequence">3</field>
+    </record>
+    <record id="employee_level_lv4" model="bbsw.employee.level">
+        <field name="name">Quản lý</field>
+        <field name="code">LV4</field>
+        <field name="sequence">4</field>
+    </record>
+</odoo>

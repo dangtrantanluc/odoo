@@ -23,7 +23,6 @@ There are **two copies** of the module:
 
 ## Docker Commands
 
-```bash
 # Start all services
 docker compose up -d
 

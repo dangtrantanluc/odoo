@@ -1,0 +1,305 @@
+/* ═══════════════════════════════════════════════
+   BBSW Backend Theme — #004aad + Orange
+   ═══════════════════════════════════════════════ */
+
+:root {
+    --bbsw-blue:        #004aad;
+    --bbsw-blue-dark:   #003585;
+    --bbsw-blue-light:  #e8f0fb;
+    --bbsw-orange:      #f97316;
+    --bbsw-orange-dark: #ea6c0a;
+    --bbsw-orange-light:#fff4ec;
+}
+
+/* ── Top Navbar ── */
+.o_main_navbar {
+    background: var(--bbsw-blue) !important;
+    border-bottom: 3px solid var(--bbsw-orange) !important;
+}
+.o_main_navbar .o_menu_brand,
+.o_main_navbar .o_menu_brand:hover {
+    color: #fff !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px;
+}
+.o_main_navbar > ul > li > a,
+.o_main_navbar > ul > li > .o_nav_entry,
+.o_main_navbar .o_menu_sections > li > a {
+    color: rgba(255,255,255,0.9) !important;
+}
+.o_main_navbar > ul > li > a:hover,
+.o_main_navbar .o_menu_sections > li > a:hover {
+    color: #fff !important;
+    background: rgba(255,255,255,0.12) !important;
+    border-radius: 6px;
+}
+.o_main_navbar .o_menu_sections .o_nav_entry.active,
+.o_main_navbar .o_menu_sections > li.active > a {
+    color: var(--bbsw-orange) !important;
+    border-bottom: 2px solid var(--bbsw-orange);
+}
+
+/* ── App Switcher icon ── */
+.o_main_navbar .o_menu_toggle,
+.o_main_navbar .o_menu_toggle:hover {
+    color: #fff !important;
+}
+.o_main_navbar .o_menu_toggle:hover {
+    background: rgba(255,255,255,0.15) !important;
+    border-radius: 6px;
+}
+
+/* ── Home icon & notification bells ── */
+.o_main_navbar .o_nav_entry svg,
+.o_main_navbar .o_nav_entry i {
+    color: rgba(255,255,255,0.85) !important;
+}
+
+/* ── Secondary (left) menu ── */
+.o_action_manager .o_main_navbar,
+.o_web_client .o_main_navbar {
+    box-shadow: 0 2px 8px rgba(0,74,173,0.25) !important;
+}
+
+/* ── App menu sections (Bản ghi Thu Chi, Dự án, Cấu hình) ── */
+/* Override toàn bộ vùng menu sections */
+.o_main_navbar .o_menu_sections,
+.o_main_navbar .o_menu_sections * {
+    background-color: transparent !important;
+}
+.o_main_navbar .o_menu_sections > li > a,
+.o_main_navbar .o_menu_sections > li > .o_nav_entry,
+.o_main_navbar .o_menu_sections > li > span {
+    color: rgba(255,255,255,0.9) !important;
+    background: transparent !important;
+}
+.o_main_navbar .o_menu_sections > li > a:hover,
+.o_main_navbar .o_menu_sections > li > .o_nav_entry:hover,
+.o_main_navbar .o_menu_sections > li.show > a,
+.o_main_navbar .o_menu_sections > li.open > a {
+    color: #fff !important;
+    background: rgba(255,255,255,0.15) !important;
+    border-radius: 6px;
+}
+.o_main_navbar .o_menu_sections > li.active > a,
+.o_main_navbar .o_menu_sections > li > a.active,
+.o_main_navbar .o_menu_sections .o_nav_entry.active {
+    color: #fff !important;
+    background: rgba(255,255,255,0.2) !important;
+    border-radius: 6px;
+    border-bottom: 2px solid var(--bbsw-orange) !important;
+}
+
+/* Dropdown menu trong navbar ── */
+.o_main_navbar .o_menu_sections .dropdown-menu {
+    background: var(--bbsw-blue-dark) !important;
+    border: 1px solid rgba(255,255,255,0.15) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25) !important;
+}
+.o_main_navbar .o_menu_sections .dropdown-menu .dropdown-item {
+    color: rgba(255,255,255,0.9) !important;
+}
+.o_main_navbar .o_menu_sections .dropdown-menu .dropdown-item:hover,
+.o_main_navbar .o_menu_sections .dropdown-menu .dropdown-item:focus {
+    background: rgba(255,255,255,0.15) !important;
+    color: #fff !important;
+}
+.o_main_navbar .o_menu_sections .dropdown-menu .dropdown-item.active {
+    background: var(--bbsw-orange) !important;
+    color: #fff !important;
+}
+
+/* ── Breadcrumb ── */
+.o_breadcrumb .o_breadcrumb_back,
+.o_breadcrumb .breadcrumb-item a {
+    color: var(--bbsw-blue) !important;
+}
+.o_breadcrumb .breadcrumb-item.active {
+    color: #374151 !important;
+    font-weight: 600;
+}
+
+/* ── Primary buttons ── */
+.btn-primary {
+    background-color: var(--bbsw-blue) !important;
+    border-color: var(--bbsw-blue) !important;
+    color: #fff !important;
+}
+.btn-primary:hover,
+.btn-primary:focus {
+    background-color: var(--bbsw-blue-dark) !important;
+    border-color: var(--bbsw-blue-dark) !important;
+}
+
+/* New / Save button — use orange accent ── */
+.o_form_button_save,
+.o_list_button_add {
+    background-color: var(--bbsw-orange) !important;
+    border-color: var(--bbsw-orange) !important;
+    color: #fff !important;
+}
+.o_form_button_save:hover,
+.o_list_button_add:hover {
+    background-color: var(--bbsw-orange-dark) !important;
+    border-color: var(--bbsw-orange-dark) !important;
+}
+
+/* ── List view header row ── */
+.o_list_view .o_list_table thead th,
+.o_list_view thead tr th {
+    background: var(--bbsw-blue-light) !important;
+    color: var(--bbsw-blue) !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-bottom: 2px solid var(--bbsw-blue) !important;
+}
+
+/* ── List row hover ── */
+.o_list_view tbody tr:hover > td {
+    background: #f0f5ff !important;
+}
+
+/* ── Selected row ── */
+.o_list_view tbody tr.o_data_row.o_row_selected > td {
+    background: #ddeaff !important;
+}
+
+/* ── Status bar in form ── */
+.o_statusbar_status .o_arrow_button.btn-primary,
+.o_statusbar_status .o_arrow_button.btn-primary:not(:disabled) {
+    background-color: var(--bbsw-blue) !important;
+    border-color: var(--bbsw-blue) !important;
+}
+.o_statusbar_status .o_arrow_button.o_arrow_button_current {
+    background: var(--bbsw-orange) !important;
+    border-color: var(--bbsw-orange-dark) !important;
+    color: #fff !important;
+}
+
+/* ── Form sheet title area ── */
+.o_form_view .o_form_sheet_bg {
+    background: #f8faff !important;
+}
+.o_form_view .oe_title h1 {
+    color: var(--bbsw-blue) !important;
+}
+
+/* ── Group/section headers ── */
+.o_group .o_wrap_label strong,
+.o_form_view .o_group > tbody > tr.o_group_name td {
+    color: var(--bbsw-blue) !important;
+    font-weight: 700 !important;
+}
+
+/* ── Notebook tabs ── */
+.o_notebook .nav-tabs .nav-link {
+    color: #4b5563 !important;
+    font-weight: 500;
+}
+.o_notebook .nav-tabs .nav-link.active {
+    color: var(--bbsw-blue) !important;
+    border-bottom: 2px solid var(--bbsw-blue) !important;
+    font-weight: 600 !important;
+}
+.o_notebook .nav-tabs .nav-link:hover:not(.active) {
+    color: var(--bbsw-blue) !important;
+    background: var(--bbsw-blue-light) !important;
+    border-radius: 6px 6px 0 0;
+}
+
+/* ── Badges ── */
+.badge.text-bg-success { background-color: #059669 !important; }
+.badge.text-bg-warning { background-color: var(--bbsw-orange) !important; color: #fff !important; }
+.badge.text-bg-info    { background-color: var(--bbsw-blue) !important; color: #fff !important; }
+.badge.text-bg-danger  { background-color: #dc2626 !important; }
+
+/* ── Thu Chi module: colored row text ── */
+.o_list_view tr.o_data_row.text-success td { color: #059669 !important; font-weight: 500; }
+.o_list_view tr.o_data_row.text-danger  td { color: #dc2626 !important; font-weight: 500; }
+.o_list_view tr.o_data_row.text-info    td { color: var(--bbsw-blue) !important; }
+.o_list_view tr.o_data_row.text-warning td { color: var(--bbsw-orange) !important; }
+
+/* ── Search bar ── */
+.o_searchview {
+    border-color: var(--bbsw-blue) !important;
+    border-radius: 8px !important;
+}
+.o_searchview:focus-within {
+    box-shadow: 0 0 0 2px rgba(0,74,173,0.2) !important;
+}
+
+/* ── Sidebar/control panel ── */
+.o_control_panel {
+    background: #fff !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    box-shadow: 0 1px 4px rgba(0,74,173,0.08) !important;
+}
+
+/* ── Kanban record header ── */
+.o_kanban_record .o_field_many2one_avatar_user .o_avatar {
+    border: 2px solid var(--bbsw-blue) !important;
+}
+
+/* ── Activity icons ── */
+.o_activity_filter_button:hover { color: var(--bbsw-blue) !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #93afd8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--bbsw-blue); }
+
+/* ── Thu Chi KPI Bar ── */
+.bbsw-kpi-bar {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+.bbsw-kpi-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    min-width: 0;
+}
+.bbsw-kpi-icon {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    font-size: 18px;
+}
+.bbsw-kpi-thu .bbsw-kpi-icon  { background: #dcfce7; color: #16a34a; }
+.bbsw-kpi-chi .bbsw-kpi-icon  { background: #fee2e2; color: #dc2626; }
+.bbsw-kpi-balance .bbsw-kpi-icon { background: #dbeafe; color: #1d4ed8; }
+.bbsw-kpi-thu  { border-top: 3px solid #16a34a; }
+.bbsw-kpi-chi  { border-top: 3px solid #dc2626; }
+.bbsw-kpi-balance { border-top: 3px solid #1d4ed8; }
+.bbsw-kpi-label {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.bbsw-kpi-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    white-space: nowrap;
+}
+
+/* ── Toolbar & Dropdown ── */
+.bbsw-toolbar {
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+.bbsw-dd-item {
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+    transition: background 0.1s;
+}
+.bbsw-dd-item:hover {
+    background: #f1f5f9;
+}

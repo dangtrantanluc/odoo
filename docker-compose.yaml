@@ -48,12 +48,18 @@ services:
     ports:
       - "8069:8069"
     volumes:
-      - ./odoo/custom_addons:/mnt/extra-addons
-      - ./config:/etc/odoo
+      - ./project_addons:/mnt/extra-addons
     environment:
       - HOST=db
       - USER=admin
       - PASSWORD=admin123
+    command: >
+      odoo
+      -d bb_test_db
+      --db_host db
+      --db_user admin
+      --db_password admin123
+      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     networks:
       - pm_network
       
