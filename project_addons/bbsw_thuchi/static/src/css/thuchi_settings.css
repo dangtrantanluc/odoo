@@ -1,0 +1,109 @@
+/* ══════════════════════════════════
+   BBSW — Trang Cài đặt Thu Chi
+   ══════════════════════════════════ */
+
+.bbsw-settings-page {
+    min-height: 100%;
+    background: #f1f5f9;
+}
+
+/* ── Header ── */
+.bbsw-settings-header {
+    background: linear-gradient(135deg, #004aad 0%, #0062e6 100%);
+    border-bottom: 3px solid #f97316;
+    padding: 28px 32px;
+    color: #fff;
+}
+
+.bbsw-settings-header-icon {
+    width: 48px;
+    height: 48px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+
+/* ── Body ── */
+.bbsw-settings-body {
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    max-width: 960px;
+}
+
+/* ── Section ── */
+.bbsw-settings-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+
+.bbsw-settings-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* ── Card ── */
+.bbsw-settings-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.bbsw-settings-card:hover {
+    border-color: #004aad;
+    box-shadow: 0 4px 12px rgba(0,74,173,0.12);
+    transform: translateY(-1px);
+}
+
+.bbsw-sc-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.bbsw-sc-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.bbsw-sc-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1e293b;
+    margin-bottom: 2px;
+}
+
+.bbsw-sc-desc {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.bbsw-sc-arrow {
+    color: #cbd5e1;
+    font-size: 13px;
+    flex-shrink: 0;
+    transition: color 0.15s;
+}
+
+.bbsw-settings-card:hover .bbsw-sc-arrow {
+    color: #004aad;
+}

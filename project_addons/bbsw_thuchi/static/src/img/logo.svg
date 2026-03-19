@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 105" width="340" height="105">
+  <!-- Icon: 2 thanh chéo -->
+  <!-- Thanh xanh (trên) -->
+  <rect x="12" y="2" width="46" height="16" rx="8"
+        fill="#1a56b0"
+        transform="rotate(-42 35 10)"/>
+  <!-- Bóng thanh xanh -->
+  <rect x="12" y="2" width="46" height="16" rx="8"
+        fill="#0d3a7a" opacity="0.4"
+        transform="rotate(-42 35 10) translate(4 4)"/>
+
+  <!-- Thanh cam (dưới) -->
+  <rect x="4" y="32" width="46" height="16" rx="8"
+        fill="#f97316"
+        transform="rotate(-42 27 40)"/>
+  <!-- Bóng thanh cam -->
+  <rect x="4" y="32" width="46" height="16" rx="8"
+        fill="#c45a08" opacity="0.4"
+        transform="rotate(-42 27 40) translate(4 4)"/>
+
+  <!-- BLUE -->
+  <text x="70" y="72"
+        font-family="'Arial Black','Impact','Helvetica Neue',Arial,sans-serif"
+        font-size="52" font-weight="900" fill="#1a56b0">BLUE</text>
+
+  <!-- BOLT -->
+  <text x="196" y="72"
+        font-family="'Arial Black','Impact','Helvetica Neue',Arial,sans-serif"
+        font-size="52" font-weight="900" fill="#f97316">BOLT</text>
+</svg>

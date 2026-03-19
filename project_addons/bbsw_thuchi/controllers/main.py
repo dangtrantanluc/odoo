@@ -35,6 +35,10 @@ class CustomHome(Home):
     def odoo_home(self, **kw):
         return request.redirect('/project/home')
 
+    @http.route('/odoo/settings', auth='user')
+    def odoo_settings(self, **kw):
+        return request.redirect('/web#action=84&model=res.config.settings&view_type=form&cids=1&menu_id=1')
+
     def _login_redirect(self, uid, redirect=None):
         if not redirect:
             redirect = '/project/home'

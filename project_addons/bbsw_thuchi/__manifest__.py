@@ -37,6 +37,7 @@
         'views/thuchi_page_template.xml',
         'data/default_apps.xml',
         'data/employees_data.xml',
+        'data/hide_duplicate_menus.xml',
     ],
     'assets': {
         'web.assets_frontend': [
@@ -44,11 +45,14 @@
         ],
         'web.assets_backend': [
             'bbsw_thuchi/static/src/css/backend_theme.css',
+            'bbsw_thuchi/static/src/css/thuchi_settings.css',
             'bbsw_thuchi/static/src/js/graph_colors.js',
             'bbsw_thuchi/static/src/js/thuchi_kpi.js',
             'bbsw_thuchi/static/src/xml/thuchi_kpi.xml',
             'bbsw_thuchi/static/src/xml/attachment_preview.xml',
             'bbsw_thuchi/static/src/js/attachment_paste.js',
+            'bbsw_thuchi/static/src/js/thuchi_settings.js',
+            'bbsw_thuchi/static/src/xml/thuchi_settings.xml',
         ],
     },
     'installable': True,

@@ -6,7 +6,8 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8069/web\")",
       "Bash(/home/bbsw/odoo/project_addons/bbsw_thuchi/static/src/css/backend_theme.css:*)",
       "Bash(/home/bbsw/odoo/project_addons/bbsw_thuchi/models/__init__.py:*)",
-      "Bash(curl -s -b \"session_id=test\" \"http://localhost:8069/web/assets/debug/web.assets_backend\")"
+      "Bash(curl -s -b \"session_id=test\" \"http://localhost:8069/web/assets/debug/web.assets_backend\")",
+      "Bash(ls /home/bbsw/odoo/project_addons/bbsw_thuchi/views/ grep -rn \"Cài đặt\\\\|settings\\\\|menu\" /home/bbsw/odoo/project_addons/bbsw_thuchi/views/)"
     ]
   }
 }

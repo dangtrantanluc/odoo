@@ -93,22 +93,43 @@ patch(ListController.prototype, {
         this.filterState = filterState;
         this._formatVND = formatVND;
 
-        const filterDomains = { time: [], state: [], type: [] };
+        const buList = useState([]);
 
-        const applyDomain = (key, domain) => {
-            filterDomains[key] = domain;
-            const extra = [
+        this.buList = buList;
+
+        // Load danh sách BU
+        onWillStart(async () => {
+            const records = await orm.searchRead("bbsw.business.unit", [["status", "=", "active"]], ["id", "name"], { order: "name asc" });
+            buList.push(...records);
+        });
+
+        Object.assign(filterState, {
+            buLabel: "Tất cả BU",
+            showBuDD: false,
+        });
+
+        const filterDomains = { time: [], state: [], type: [], bu: [] };
+
+        const getCurrentDomain = () => {
+            const base = this.props.domain || [];
+            return [
+                ...base,
                 ...filterDomains.time,
                 ...filterDomains.state,
                 ...filterDomains.type,
+                ...filterDomains.bu,
             ];
-            const base = this.props.domain || [];
-            // Reload model trực tiếp với domain mới
-            this.model.load({ domain: [...base, ...extra] });
+        };
+
+        const applyDomain = (key, domain) => {
+            filterDomains[key] = domain;
+            const fullDomain = getCurrentDomain();
+            this.model.load({ domain: fullDomain });
+            loadKpi();
         };
 
         const loadKpi = async () => {
-            const domain = this.props.domain || [];
+            const domain = getCurrentDomain();
             const res = await orm.call(BBSW_MODEL, "get_kpi_totals", [domain]);
             kpi.thu = res.tong_thu;
             kpi.chi = res.tong_chi;
@@ -134,9 +155,16 @@ patch(ListController.prototype, {
             });
         };
 
+        // Lọc BU
+        this.applyBuFilter = (id, label) => {
+            filterState.showBuDD = false;
+            filterState.buLabel = label;
+            applyDomain("bu", id === "all" ? [] : [["business_unit_id", "=", id]]);
+        };
+
         // Toggle dropdown
         this.toggleDropdown = (which) => {
-            const keys = ["showTimeDD", "showStateDD", "showTypeDD"];
+            const keys = ["showTimeDD", "showStateDD", "showTypeDD", "showBuDD"];
             keys.forEach((k) => {
                 filterState[k] = k === which ? !filterState[k] : false;
             });
