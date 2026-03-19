@@ -8,21 +8,18 @@ Odoo 17 Community custom module — **BB Project Management** (`bb_project_manag
 
 ---
 
-## Module Locations (Important)
+## Module Location
 
-There are **two copies** of the module:
+Active module: `odoo/custom_addons/bb_project_management/`
+`docker-compose.yaml` mounts **`./odoo/custom_addons`** → `/mnt/extra-addons`.
 
-| Path | Version | Status |
-|---|---|---|
-| `odoo/custom_addons/bb_project_management/` | v1.0 — standalone models (`bb.project`, `bb.project.task`) | **Active** — mounted by docker-compose |
-| `custom_addons/bb_project_management/` | v2.0 — inheriting `project.project`/`project.task` | In progress / incomplete |
-
-`docker-compose.yaml` mounts **`./odoo/custom_addons`** → `/mnt/extra-addons`. To switch to the v2 path, change that volume line.
+A second Odoo addon (`bbsw_thuchi`) lives at `odoo/custom_addons/bbsw_thuchi/` and is loaded from the same mount.
 
 ---
 
 ## Docker Commands
 
+```bash
 # Start all services
 docker compose up -d
 
@@ -108,9 +105,39 @@ Defined in `security/bb_project_security.xml`:
 | `group_bb_pm_member` | Log own backlogs, update task status (own backlogs only via record rule) |
 | `group_bb_pm_viewer` | Read-only |
 
-### Dashboard
+### Controllers
+
+| File | Route | Purpose |
+|---|---|---|
+| `homepage.py` | `GET /project/bb-project` | QWeb landing page — project stats + recent list |
+| `ai_chat.py` | `POST /web/bb_pm_agent/ask` | Proxy to AI Agent service; injects `user_id` + role |
+| `avatar.py` | — | User avatar upload/fetch |
+
+### Dashboard & Frontend JS
 
 `static/src/js/dashboard.js` — OWL component registered as action `bb_project_dashboard`. Uses `orm.call()` with `read_group` (4 parallel calls on mount) to populate KPI cards. Template: `static/src/xml/dashboard.xml`. Styles: `static/src/scss/dashboard.scss`. Currency hardcoded to VND in `_formatCurrency()`.
+
+Other frontend files in `static/src/js/`: `ai_chat.js` (chat widget), `avatar_upload.js`, `lang_switcher.js`, `workspace_nav.js`.
+
+---
+
+## AI Agent Service (`agent/`)
+
+Separate FastAPI service (container `project_management_agent`, port 8001). Built from `./agent/Dockerfile`.
+
+```
+agent/
+  api/main.py          — FastAPI app, /ask endpoint
+  core/
+    react_loop.py      — ReAct (Reason+Act) loop driving LLM responses
+    sql_engine.py      — Executes read-only SQL against Odoo's PostgreSQL
+    intent.py          — Classifies question intent before routing
+    schema_context.py  — Provides DB schema hints to the LLM
+    tools.py           — Tool definitions available to the agent
+  memory/              — Conversation memory / session store
+```
+
+The Odoo `ai_chat.py` controller proxies user questions to `http://agent:8001/ask`, injecting the Odoo `user_id` and mapped role (`admin/manager/member/viewer`).
 
 ---
 
@@ -126,6 +153,7 @@ Views are **standalone** (not inheriting standard Odoo views) to keep the BB Pro
 - `_compute_counts()` in `bb_project.py` uses `sum(len(t.backlog_ids) for t in rec.task_ids)` — N+1 pattern for large datasets.
 - When adding new fields with `domain` referencing `company_id` on a view, Odoo 17 requires `<field name="company_id" column_invisible="1"/>` (or `invisible="1"` in forms) to be present in that view — even if company_id isn't displayed.
 - `demo data` tags (in `bb_project_demo.xml`) must not use names already created by the `project` module's own demo data (e.g. "Bug" conflicts with `project.tags` unique constraint).
+- Tests are split across two files: `test_bb_project.py` (TC-01..TC-20, core model/security) and `test_bb_project_extended.py` (TC-21..TC-60, milestones, financials, cascade, constraints).
 
 ---
 

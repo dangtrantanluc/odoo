@@ -145,7 +145,7 @@
                                     <field name="cost_per_hour_snapshot" readonly="1"/>
                                     <field name="total_cost_snapshot" readonly="1"/>
                                     <field name="currency_id" column_invisible="1"/>
-                                    <field name="description"/>
+                                    <field name="description" optional="hide"/>
                                     <field name="status" widget="badge"
                                            decoration-success="status == 'approved'"
                                            decoration-danger="status == 'rejected'"
@@ -163,6 +163,31 @@
                 </sheet>
                 <chatter/>
             </form>
+        </field>
+    </record>
+
+    <!-- Task Search -->
+    <record id="view_bb_project_task_search" model="ir.ui.view">
+        <field name="name">bb.project.task.search</field>
+        <field name="model">bb.project.task</field>
+        <field name="arch" type="xml">
+            <search string="Search Tasks">
+                <field name="name" string="Task"/>
+                <field name="project_id"/>
+                <field name="assignee_id"/>
+                <filter name="my_tasks" string="My Tasks" domain="[('assignee_id', '=', uid)]"/>
+                <separator/>
+                <filter name="todo" string="To Do" domain="[('status', '=', 'todo')]"/>
+                <filter name="in_progress" string="In Progress" domain="[('status', '=', 'in_progress')]"/>
+                <filter name="review" string="In Review" domain="[('status', '=', 'review')]"/>
+                <filter name="done" string="Done" domain="[('status', '=', 'done')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_project" string="Project" context="{'group_by': 'project_id'}"/>
+                    <filter name="group_status" string="Status" context="{'group_by': 'status'}"/>
+                    <filter name="group_assignee" string="Assignee" context="{'group_by': 'assignee_id'}"/>
+                    <filter name="group_priority" string="Priority" context="{'group_by': 'priority'}"/>
+                </group>
+            </search>
         </field>
     </record>
 

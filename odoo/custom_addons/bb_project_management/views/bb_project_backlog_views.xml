@@ -22,6 +22,7 @@
                        decoration-success="status == 'approved'"
                        decoration-danger="status == 'rejected'"
                        decoration-warning="status == 'pending'"/>
+                <field name="description" optional="hide"/>
                 <field name="approver_id"/>
                 <button name="action_approve" string="Approve" type="object" icon="fa-check"
                         invisible="status != 'pending'"
@@ -67,9 +68,8 @@
                             <field name="approver_id" readonly="1"/>
                         </group>
                     </group>
-                    <group string="Description">
-                        <field name="description" nolabel="1" placeholder="Describe the work done..."/>
-                    </group>
+                    <separator string="Description"/>
+                    <field name="description" nolabel="1" placeholder="Describe the work done..."/>
                 </sheet>
                 <chatter/>
             </form>
@@ -90,7 +90,7 @@
                 <field name="cost_per_hour_snapshot" readonly="1"/>
                 <field name="total_cost_snapshot" readonly="1"/>
                 <field name="currency_id" column_invisible="1"/>
-                <field name="description"/>
+                <field name="description" optional="hide"/>
                 <field name="status" widget="badge"
                        decoration-success="status == 'approved'"
                        decoration-danger="status == 'rejected'"

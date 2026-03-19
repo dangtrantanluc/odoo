@@ -162,8 +162,44 @@
                            statusbar_visible="planned,in_progress,on_hold,completed"/>
                 </header>
                 <sheet>
+                    <!-- ── Backlog Summary Panel ── -->
+                    <div class="alert alert-info mb-0 pb-2 pt-2" role="status"
+                         invisible="scope_count == 0"
+                         style="border-left: 4px solid #667eea; background: #f0f4ff;">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <strong><i class="fa fa-list-alt me-1"/> Backlog</strong>
+                            </div>
+                            <div class="col-auto">
+                                <span class="text-muted">Items:</span>
+                                <strong><field name="scope_count" class="d-inline"/></strong>
+                            </div>
+                            <div class="col-auto">
+                                <span class="text-muted">Est. Hours:</span>
+                                <strong><field name="estimated_total_hours" class="d-inline"/></strong>
+                            </div>
+                            <div class="col-auto">
+                                <span class="text-muted">Est. Cost:</span>
+                                <strong><field name="estimated_total_cost" widget="monetary" class="d-inline"/></strong>
+                                <field name="currency_id" invisible="1"/>
+                            </div>
+                            <div class="col-auto">
+                                <span class="text-muted">Actual:</span>
+                                <strong><field name="total_cost" widget="monetary" class="d-inline"/></strong>
+                            </div>
+                            <div class="col">
+                                <span class="text-muted me-1">Task Coverage:</span>
+                                <field name="estimation_progress" widget="progressbar"
+                                       options="{'overflow_class': 'bg-success'}"/>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Smart Buttons -->
                     <div class="oe_button_box" name="button_box">
+                        <button name="action_view_scope" type="object" class="oe_stat_button" icon="fa-list-alt">
+                            <field name="scope_count" widget="statinfo" string="Backlog"/>
+                        </button>
                         <button name="action_view_tasks" type="object" class="oe_stat_button" icon="fa-tasks">
                             <field name="task_count" widget="statinfo" string="Tasks"/>
                         </button>
@@ -194,7 +230,7 @@
                             <field name="start_date"/>
                             <field name="end_date"/>
                             <field name="priority" widget="priority"/>
-                            <field name="customer_id" widget="many2one_avatar_partner"
+                            <field name="customer_id" widget="many2one_avatar"
                                    options="{'no_create': False, 'no_quick_create': False}"/>
                             <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
                         </group>
@@ -213,19 +249,22 @@
                         <page string="Description" name="description">
                             <field name="description" placeholder="Project description and objectives..."/>
                         </page>
-                        <page string="Estimation (Scope)" name="scope">
+                        <page string="Backlog" name="scope">
                             <field name="scope_ids" context="{'default_project_id': active_id}">
-                                <tree editable="bottom"
-                                      decoration-success="task_id != False">
+                                <tree editable="bottom" open_form_view="1"
+                                      decoration-success="task_id != False"
+                                      decoration-muted="task_id == False and estimated_hours == 0">
                                     <field name="sequence" widget="handle"/>
                                     <field name="name"/>
+                                    <field name="milestone_id" domain="[('project_id', '=', parent.id)]"
+                                           optional="show"/>
                                     <field name="assignee_id" widget="many2one_avatar_user"/>
-                                    <field name="estimated_hours"/>
+                                    <field name="estimated_hours" sum="Total Hours"/>
                                     <field name="estimated_rate"/>
-                                    <field name="estimated_cost" readonly="1"/>
+                                    <field name="estimated_cost" readonly="1" sum="Total Cost"/>
                                     <field name="currency_id" column_invisible="1"/>
-                                    <field name="notes"/>
-                                    <field name="task_id" readonly="1"/>
+                                    <field name="description" optional="hide"/>
+                                    <field name="task_id" readonly="1" optional="show"/>
                                     <button name="action_create_task" string="Create Task" type="object"
                                             icon="fa-plus-circle"
                                             invisible="task_id != False"
@@ -240,6 +279,9 @@
                                       decoration-warning="status == 'in_progress'">
                                     <field name="name"/>
                                     <field name="due_date" decoration-danger="due_date and due_date &lt; context_today() and status not in ('done','cancelled')"/>
+                                    <field name="estimated_hours" readonly="1" sum="Total Hours"/>
+                                    <field name="estimated_cost" readonly="1" sum="Total Cost"/>
+                                    <field name="currency_id" column_invisible="1"/>
                                     <field name="task_count"/>
                                     <field name="done_count"/>
                                     <field name="completion_pct" widget="progressbar"/>
@@ -265,6 +307,34 @@
                                            decoration-warning="status == 'in_progress'"
                                            decoration-muted="status == 'todo'"/>
                                     <field name="total_hours"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Work Logs" name="backlogs">
+                            <field name="worklog_ids" readonly="1">
+                                <tree decoration-success="status == 'approved'"
+                                      decoration-danger="status == 'rejected'"
+                                      decoration-warning="status == 'pending'"
+                                      open_form_view="1">
+                                    <field name="work_date"/>
+                                    <field name="task_id"/>
+                                    <field name="user_id" widget="many2one_avatar_user"/>
+                                    <field name="hours" sum="Total Hours"/>
+                                    <field name="cost_per_hour_snapshot"/>
+                                    <field name="total_cost_snapshot" sum="Total Cost"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                    <field name="description" optional="show"/>
+                                    <field name="status" widget="badge"
+                                           decoration-success="status == 'approved'"
+                                           decoration-danger="status == 'rejected'"
+                                           decoration-warning="status == 'pending'"/>
+                                    <field name="approver_id"/>
+                                    <button name="action_approve" string="" type="object" icon="fa-check"
+                                            invisible="status != 'pending'"
+                                            groups="bb_project_management.group_bb_pm_admin"/>
+                                    <button name="action_reject" string="" type="object" icon="fa-times"
+                                            invisible="status != 'pending'"
+                                            groups="bb_project_management.group_bb_pm_admin"/>
                                 </tree>
                             </field>
                         </page>

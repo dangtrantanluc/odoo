@@ -4,7 +4,7 @@ from odoo import models, fields, api
 
 class BbProjectScope(models.Model):
     _name = 'bb.project.scope'
-    _description = 'BB Project Scope / Initial Backlog'
+    _description = 'BB Project Backlog Item'
     _order = 'sequence, id'
 
     sequence = fields.Integer(default=10)
@@ -29,7 +29,11 @@ class BbProjectScope(models.Model):
         string='Est. Cost', currency_field='currency_id',
         compute='_compute_cost', store=True,
     )
-    notes = fields.Text(string='Notes')
+    milestone_id = fields.Many2one(
+        'bb.project.milestone', string='Milestone', ondelete='set null', index=True,
+        domain="[('project_id', '=', project_id)]",
+    )
+    description = fields.Html(string='Description')
     task_id = fields.Many2one(
         'bb.project.task', string='Linked Task', readonly=True,
         help='Task created from this scope item',
@@ -58,6 +62,7 @@ class BbProjectScope(models.Model):
             'name': self.name,
             'project_id': self.project_id.id,
             'assignee_id': self.assignee_id.id if self.assignee_id else False,
+            'milestone_id': self.milestone_id.id if self.milestone_id else False,
         })
         self.task_id = task
         return {

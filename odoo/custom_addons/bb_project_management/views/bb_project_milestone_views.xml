@@ -13,6 +13,9 @@
                 <field name="name"/>
                 <field name="project_id"/>
                 <field name="due_date" decoration-danger="due_date and due_date &lt; context_today() and status not in ('done','cancelled')"/>
+                <field name="estimated_hours" optional="show" sum="Total Hours"/>
+                <field name="estimated_cost" optional="show" sum="Total Cost"/>
+                <field name="currency_id" column_invisible="1"/>
                 <field name="task_count"/>
                 <field name="done_count"/>
                 <field name="completion_pct" widget="progressbar"/>
@@ -58,6 +61,9 @@
                             <field name="due_date"/>
                         </group>
                         <group>
+                            <field name="estimated_hours" readonly="1"/>
+                            <field name="estimated_cost" readonly="1"/>
+                            <field name="currency_id" invisible="1"/>
                             <field name="completion_pct" widget="progressbar"/>
                             <field name="task_count"/>
                             <field name="done_count"/>

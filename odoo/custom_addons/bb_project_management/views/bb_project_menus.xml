@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- ── Root Menu ──────────────────────────────── -->
+    <!-- ── Back to Workspace ─────────────────────── -->
+    <record id="action_back_to_workspace" model="ir.actions.act_url">
+        <field name="name">← Workspace</field>
+        <field name="url">/project/home</field>
+        <field name="target">self</field>
+    </record>
+
+    <!-- ── Root Menu — click navigates back to workspace ── -->
     <menuitem id="menu_bb_project_root"
               name="BB Project"
               sequence="10"
+              action="action_back_to_workspace"
               web_icon="bb_project_management,static/src/img/icon.png"/>
 
     <!-- ── Dashboard ─────────────────────────── -->
@@ -97,5 +105,6 @@
               action="action_bb_project_member"
               sequence="20"
               groups="bb_project_management.group_bb_pm_admin,bb_project_management.group_bb_pm_manager"/>
+
 
 </odoo>

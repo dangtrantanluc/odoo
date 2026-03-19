@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Scope / Backlog Form -->
+    <record id="view_bb_project_scope_form" model="ir.ui.view">
+        <field name="name">bb.project.scope.form</field>
+        <field name="model">bb.project.scope</field>
+        <field name="arch" type="xml">
+            <form string="Backlog Item">
+                <sheet>
+                    <group>
+                        <group string="Details">
+                            <field name="name"/>
+                            <field name="project_id" readonly="1"/>
+                            <field name="milestone_id" domain="[('project_id', '=', project_id)]"/>
+                            <field name="assignee_id" widget="many2one_avatar_user"/>
+                        </group>
+                        <group string="Estimation">
+                            <field name="estimated_hours"/>
+                            <field name="estimated_rate"/>
+                            <field name="estimated_cost" readonly="1"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group>
+                            <field name="task_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <separator string="Description"/>
+                    <field name="description" placeholder="Describe the scope of work..."/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Scope / Backlog List -->
+    <record id="view_bb_project_scope_list" model="ir.ui.view">
+        <field name="name">bb.project.scope.tree</field>
+        <field name="model">bb.project.scope</field>
+        <field name="arch" type="xml">
+            <tree string="Backlog" editable="bottom"
+                  decoration-success="task_id != False"
+                  decoration-muted="task_id == False and estimated_hours == 0">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="milestone_id" domain="[('project_id', '=', project_id)]" optional="show"/>
+                <field name="assignee_id" widget="many2one_avatar_user"/>
+                <field name="estimated_hours" sum="Total Hours"/>
+                <field name="estimated_rate"/>
+                <field name="estimated_cost" readonly="1" sum="Total Cost"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="task_id" readonly="1" optional="show"/>
+                <button name="action_create_task" string="Create Task" type="object"
+                        icon="fa-plus-circle"
+                        invisible="task_id != False"
+                        groups="bb_project_management.group_bb_pm_manager"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Scope / Backlog Search -->
+    <record id="view_bb_project_scope_search" model="ir.ui.view">
+        <field name="name">bb.project.scope.search</field>
+        <field name="model">bb.project.scope</field>
+        <field name="arch" type="xml">
+            <search string="Search Backlog">
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="assignee_id"/>
+                <field name="milestone_id"/>
+                <filter name="has_task" string="Has Task" domain="[('task_id', '!=', False)]"/>
+                <filter name="no_task" string="No Task" domain="[('task_id', '=', False)]"/>
+                <separator/>
+                <group expand="0" string="Group By">
+                    <filter name="grp_project" string="Project" context="{'group_by': 'project_id'}"/>
+                    <filter name="grp_milestone" string="Milestone" context="{'group_by': 'milestone_id'}"/>
+                    <filter name="grp_assignee" string="Assignee" context="{'group_by': 'assignee_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Scope / Backlog Action -->
+    <record id="action_bb_project_scope" model="ir.actions.act_window">
+        <field name="name">Backlog</field>
+        <field name="res_model">bb.project.scope</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{'search_default_grp_project': 1}</field>
+    </record>
+
+</odoo>

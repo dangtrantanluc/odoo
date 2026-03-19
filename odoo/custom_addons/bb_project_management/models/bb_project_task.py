@@ -13,30 +13,28 @@ class BbProjectTask(models.Model):
         'bb.project', string='Project', required=True, ondelete='cascade', index=True,
     )
     company_id = fields.Many2one(
-        'res.company', string='Company', related='project_id.company_id', store=True, index=True,
+        'res.company', related='project_id.company_id', store=True, index=True,
     )
-    assignee_id = fields.Many2one(
-        'res.users', string='Assignee', tracking=True, index=True,
-    )
+    assignee_id = fields.Many2one('res.users', string='Assignee', tracking=True, index=True)
+
     status = fields.Selection([
-        ('todo', 'To Do'),
+        ('todo',        'To Do'),
         ('in_progress', 'In Progress'),
-        ('review', 'Review'),
-        ('done', 'Done'),
+        ('review',      'Review'),
+        ('done',        'Done'),
     ], string='Status', default='todo', tracking=True, index=True)
+
     priority = fields.Selection([
-        ('low', 'Low'),
-        ('medium', 'Medium'),
-        ('high', 'High'),
+        ('low',      'Low'),
+        ('medium',   'Medium'),
+        ('high',     'High'),
         ('critical', 'Critical'),
     ], string='Priority', default='medium', tracking=True)
 
     deadline = fields.Date(string='Deadline')
-    end_at = fields.Date(string='End At', tracking=True,
-                         help='Planned completion date for this task')
-    days_remaining = fields.Integer(
-        string='Days Left', compute='_compute_days_remaining', store=False,
-    )
+    end_at = fields.Date(string='End At', tracking=True, help='Planned completion date for this task')
+    days_remaining = fields.Integer(string='Days Left', compute='_compute_days_remaining', store=False)
+
     milestone_id = fields.Many2one(
         'bb.project.milestone', string='Milestone', ondelete='set null', index=True,
         domain="[('project_id', '=', project_id)]",
@@ -48,28 +46,19 @@ class BbProjectTask(models.Model):
     tag_ids = fields.Many2many(
         'bb.project.tag', 'bb_project_task_tag_rel', 'task_id', 'tag_id', string='Tags',
     )
-    backlog_ids = fields.One2many(
-        'bb.project.backlog', 'task_id', string='Work Logs',
-    )
+    backlog_ids = fields.One2many('bb.project.backlog', 'task_id', string='Work Logs')
 
     total_hours = fields.Float(
-        string='Total Hours (Approved)',
-        compute='_compute_total_hours',
-        store=True,
+        string='Total Hours (Approved)', compute='_compute_totals', store=True,
     )
     total_cost = fields.Monetary(
-        string='Total Cost (Approved)',
-        compute='_compute_total_hours',
-        store=True,
+        string='Total Cost (Approved)', compute='_compute_totals', store=True,
         currency_field='currency_id',
     )
-    currency_id = fields.Many2one(
-        'res.currency', related='project_id.currency_id', store=True,
-    )
-    backlog_count = fields.Integer(
-        string='Work Logs',
-        compute='_compute_backlog_count',
-    )
+    currency_id = fields.Many2one('res.currency', related='project_id.currency_id', store=True)
+    backlog_count = fields.Integer(string='Work Logs', compute='_compute_totals', store=True)
+
+    # ── Computed fields ───────────────────────────────────────────────────────
 
     @api.depends('end_at', 'status')
     def _compute_days_remaining(self):
@@ -81,25 +70,26 @@ class BbProjectTask(models.Model):
                 rec.days_remaining = 0
 
     @api.depends('backlog_ids', 'backlog_ids.status', 'backlog_ids.hours', 'backlog_ids.total_cost_snapshot')
-    def _compute_total_hours(self):
+    def _compute_totals(self):
         for rec in self:
             approved = rec.backlog_ids.filtered(lambda b: b.status == 'approved')
             rec.total_hours = sum(approved.mapped('hours'))
             rec.total_cost = sum(approved.mapped('total_cost_snapshot'))
-
-    def _compute_backlog_count(self):
-        for rec in self:
             rec.backlog_count = len(rec.backlog_ids)
 
-    # Kanban state transitions
+    # ── Status transitions ────────────────────────────────────────────────────
+
+    def _write_status(self, status):
+        self.write({'status': status})
+
     def action_set_todo(self):
-        self.write({'status': 'todo'})
+        self._write_status('todo')
 
     def action_set_in_progress(self):
-        self.write({'status': 'in_progress'})
+        self._write_status('in_progress')
 
     def action_set_review(self):
-        self.write({'status': 'review'})
+        self._write_status('review')
 
     def action_set_done(self):
-        self.write({'status': 'done'})
+        self._write_status('done')

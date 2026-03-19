@@ -1,0 +1,872 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Mock data for manager2 system testing.
+    Self-contained — no demo data dependencies.
+    login: manager2 / manager2  (group: pm_manager, implies pm_admin)
+    login: dev_alice / dev_alice (group: pm_member)
+    login: dev_bob   / dev_bob   (group: pm_member)
+
+    Coverage:
+      Project statuses : planned, in_progress, on_hold, completed, cancelled
+      Task statuses    : todo, in_progress, review, done
+      Backlog statuses : pending, approved, rejected
+      Milestone statuses: draft, in_progress, done, cancelled
+      Features         : rate history, over-budget, financial rollup,
+                         manager2 as owner / PM / team member / account mgr
+-->
+<odoo>
+    <data noupdate="1">
+
+        <!-- ════════════════════════════════════════════════
+             USERS
+        ════════════════════════════════════════════════ -->
+        <!-- login: testmgr2 / testmgr2  — PM Manager role (can approve backlogs) -->
+        <record id="mock_user_manager2" model="res.users">
+            <field name="name">Tran Thi Lan — Test PM</field>
+            <field name="login">testmgr2</field>
+            <field name="password">testmgr2</field>
+            <field name="company_ids" eval="[(4, ref('base.main_company'))]"/>
+            <field name="company_id" ref="base.main_company"/>
+            <field name="groups_id" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('bb_project_management.group_bb_pm_manager'),
+            ])]"/>
+        </record>
+
+        <!-- login: testalice / testalice  — Member role -->
+        <record id="mock_user_alice" model="res.users">
+            <field name="name">Alice Nguyen — Test Dev</field>
+            <field name="login">testalice</field>
+            <field name="password">testalice</field>
+            <field name="company_ids" eval="[(4, ref('base.main_company'))]"/>
+            <field name="company_id" ref="base.main_company"/>
+            <field name="groups_id" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('bb_project_management.group_bb_pm_member'),
+            ])]"/>
+        </record>
+
+        <!-- login: testbob / testbob  — Member role -->
+        <record id="mock_user_bob" model="res.users">
+            <field name="name">Bob Tran — Test Dev</field>
+            <field name="login">testbob</field>
+            <field name="password">testbob</field>
+            <field name="company_ids" eval="[(4, ref('base.main_company'))]"/>
+            <field name="company_id" ref="base.main_company"/>
+            <field name="groups_id" eval="[(6, 0, [
+                ref('base.group_user'),
+                ref('bb_project_management.group_bb_pm_member'),
+            ])]"/>
+        </record>
+
+        <!-- ════════════════════════════════════════════════
+             CUSTOMERS
+        ════════════════════════════════════════════════ -->
+        <record id="mock_customer_fintech" model="res.partner">
+            <field name="name">FinTech Solutions JSC</field>
+            <field name="is_company">True</field>
+            <field name="email">contact@fintech.example.com</field>
+            <field name="phone">+84-28-7777-8888</field>
+        </record>
+        <record id="mock_customer_retailco" model="res.partner">
+            <field name="name">RetailCo Vietnam</field>
+            <field name="is_company">True</field>
+            <field name="email">tech@retailco.example.com</field>
+            <field name="phone">+84-24-3333-4444</field>
+        </record>
+        <record id="mock_customer_globalsec" model="res.partner">
+            <field name="name">GlobalSec Ltd</field>
+            <field name="is_company">True</field>
+            <field name="email">ciso@globalsec.example.com</field>
+            <field name="phone">+84-90-5555-6666</field>
+        </record>
+        <record id="mock_customer_startup" model="res.partner">
+            <field name="name">GreenStart JSC</field>
+            <field name="is_company">True</field>
+            <field name="email">hello@greenstart.example.com</field>
+            <field name="phone">+84-91-2222-3333</field>
+        </record>
+
+        <!-- ════════════════════════════════════════════════
+             TAGS
+        ════════════════════════════════════════════════ -->
+        <record id="mock_tag_backend" model="bb.project.tag">
+            <field name="name">Backend [mock]</field>
+            <field name="color">1</field>
+        </record>
+        <record id="mock_tag_frontend" model="bb.project.tag">
+            <field name="name">Frontend [mock]</field>
+            <field name="color">4</field>
+        </record>
+        <record id="mock_tag_devops" model="bb.project.tag">
+            <field name="name">DevOps [mock]</field>
+            <field name="color">6</field>
+        </record>
+        <record id="mock_tag_security" model="bb.project.tag">
+            <field name="name">Security [mock]</field>
+            <field name="color">2</field>
+        </record>
+
+        <!-- ════════════════════════════════════════════════
+             PROJECT A: CRM System Migration
+             owner: manager2  |  status: in_progress
+             OVER-BUDGET — tests budget_remaining < 0 highlight
+        ════════════════════════════════════════════════ -->
+        <record id="mock_proj_crm" model="bb.project">
+            <field name="name">[Mock] CRM System Migration</field>
+            <field name="code">MCK-CRM</field>
+            <field name="owner_id" ref="mock_user_manager2"/>
+            <field name="account_manager_id" ref="mock_user_manager2"/>
+            <field name="customer_id" ref="mock_customer_fintech"/>
+            <field name="status">in_progress</field>
+            <field name="priority">critical</field>
+            <field name="start_date">2026-02-01</field>
+            <field name="end_date">2026-04-30</field>
+            <field name="budget">30000.00</field>
+            <field name="description">&lt;p&gt;Migrate legacy CRM to new platform. Budget is tight — watch costs closely.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_backend')), (4, ref('mock_tag_devops'))]"/>
+        </record>
+
+        <!-- Members -->
+        <record id="mock_mem_crm_mgr2" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="role">PM</field>
+        </record>
+        <record id="mock_mem_crm_alice" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="role">DEV</field>
+        </record>
+        <record id="mock_mem_crm_bob" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="role">DEV</field>
+        </record>
+
+        <!-- Rate history: manager2 promoted mid-project (tests _compute_current_rate) -->
+        <record id="mock_rate_crm_mgr2_v1" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_crm_mgr2"/>
+            <field name="cost_per_hour">80.00</field>
+            <field name="effective_from">2026-02-01</field>
+            <field name="effective_to">2026-02-28</field>
+        </record>
+        <record id="mock_rate_crm_mgr2_v2" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_crm_mgr2"/>
+            <field name="cost_per_hour">90.00</field>
+            <field name="effective_from">2026-03-01</field>
+        </record>
+        <record id="mock_rate_crm_alice" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_crm_alice"/>
+            <field name="cost_per_hour">50.00</field>
+            <field name="effective_from">2026-02-01</field>
+        </record>
+        <record id="mock_rate_crm_bob" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_crm_bob"/>
+            <field name="cost_per_hour">55.00</field>
+            <field name="effective_from">2026-02-01</field>
+        </record>
+
+        <!-- Scope -->
+        <record id="mock_scope_crm_mapping" model="bb.project.scope">
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="name">Data Mapping &amp; Schema Design</field>
+            <field name="assignee_id" ref="mock_user_bob"/>
+            <field name="estimated_hours">30.0</field>
+            <field name="estimated_rate">55.00</field>
+            <field name="notes">Map 140 legacy fields to new schema</field>
+        </record>
+        <record id="mock_scope_crm_etl" model="bb.project.scope">
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="name">ETL Migration Scripts</field>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="estimated_hours">40.0</field>
+            <field name="estimated_rate">50.00</field>
+            <field name="notes">Python scripts + dry-run validation</field>
+        </record>
+        <record id="mock_scope_crm_pm" model="bb.project.scope">
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="name">Project Management &amp; Client Comms</field>
+            <field name="assignee_id" ref="mock_user_manager2"/>
+            <field name="estimated_hours">20.0</field>
+            <field name="estimated_rate">80.00</field>
+            <field name="notes">Weekly calls, risk log, stakeholder updates</field>
+        </record>
+
+        <!-- Milestones: done / in_progress / draft -->
+        <record id="mock_ms_crm_m1" model="bb.project.milestone">
+            <field name="name">Data Mapping Approved</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="due_date">2026-02-28</field>
+            <field name="status">done</field>
+            <field name="description">Customer signed off field mapping document</field>
+        </record>
+        <record id="mock_ms_crm_m2" model="bb.project.milestone">
+            <field name="name">Dry-Run Migration Passed</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="due_date">2026-03-31</field>
+            <field name="status">in_progress</field>
+            <field name="description">ETL scripts running cleanly on staging clone</field>
+        </record>
+        <record id="mock_ms_crm_m3" model="bb.project.milestone">
+            <field name="name">Production Cut-over</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="due_date">2026-04-26</field>
+            <field name="status">draft</field>
+            <field name="description">Weekend cut-over + legacy decommission</field>
+        </record>
+
+        <!-- Tasks: done / review / in_progress / todo (x2) -->
+        <record id="mock_task_crm_mapping" model="bb.project.task">
+            <field name="name">Legacy Field Mapping Document</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="milestone_id" ref="mock_ms_crm_m1"/>
+            <field name="assignee_id" ref="mock_user_bob"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-02-20</field>
+            <field name="result">140 fields mapped, 12 deprecated flagged for archival</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_backend'))]"/>
+        </record>
+        <record id="mock_task_crm_etl" model="bb.project.task">
+            <field name="name">ETL Migration Scripts</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="milestone_id" ref="mock_ms_crm_m2"/>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="status">review</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-03-25</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_backend'))]"/>
+        </record>
+        <record id="mock_task_crm_dryrun" model="bb.project.task">
+            <field name="name">Dry-Run on Staging &amp; Data Audit</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="milestone_id" ref="mock_ms_crm_m2"/>
+            <field name="assignee_id" ref="mock_user_bob"/>
+            <field name="status">in_progress</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-03-31</field>
+            <field name="issues">2 tables showing row-count mismatch — investigating timezone delta</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_backend'))]"/>
+        </record>
+        <record id="mock_task_crm_cutover" model="bb.project.task">
+            <field name="name">Production Cut-over Weekend</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="milestone_id" ref="mock_ms_crm_m3"/>
+            <field name="assignee_id" ref="mock_user_manager2"/>
+            <field name="status">todo</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-04-27</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_devops'))]"/>
+        </record>
+        <record id="mock_task_crm_hypercare" model="bb.project.task">
+            <field name="name">Hypercare &amp; User Training</field>
+            <field name="project_id" ref="mock_proj_crm"/>
+            <field name="milestone_id" ref="mock_ms_crm_m3"/>
+            <field name="assignee_id" ref="mock_user_manager2"/>
+            <field name="status">todo</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-04-30</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_backend'))]"/>
+        </record>
+
+        <!-- Work logs — approved heavy → over budget; + pending + rejected -->
+        <record id="mock_bl_crm_map_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_mapping"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-02-03</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Extracted legacy schema, built mapping spreadsheet</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_map_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_mapping"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-02-05</field>
+            <field name="hours">7.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Customer review session + revisions</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_map_3" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_mapping"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-02-10</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Final sign-off doc + archive list</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_etl_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_etl"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-02-15</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Python ETL core — read/transform/load pipeline</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_etl_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_etl"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-02-18</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Edge-case handling: nulls, duplicates, encoding errors</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_etl_3" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_etl"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-02-22</field>
+            <field name="hours">7.5</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Unit tests for all transform functions</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_etl_4" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_etl"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-03-01</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Code review fixes and staging deploy</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_dry_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_dryrun"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-03-05</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">First dry-run: 138/140 tables passed, 2 mismatches found</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_dry_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_dryrun"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-03-10</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Investigating timezone mismatch in appointments table</field>
+            <field name="status">pending</field>
+        </record>
+        <record id="mock_bl_crm_dry_rej" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_dryrun"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-03-08</field>
+            <field name="hours">4.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Duplicate — initial audit pass already in 2026-03-05</field>
+            <field name="status">rejected</field>
+        </record>
+        <record id="mock_bl_crm_pm_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_cutover"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="work_date">2026-02-10</field>
+            <field name="hours">3.0</field>
+            <field name="cost_per_hour_snapshot">80.00</field>
+            <field name="description">Weekly status call + risk register update</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_crm_pm_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_crm_cutover"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="work_date">2026-03-03</field>
+            <field name="hours">4.0</field>
+            <field name="cost_per_hour_snapshot">90.00</field>
+            <field name="description">Cut-over plan doc + FinTech sign-off meeting</field>
+            <field name="status">pending</field>
+        </record>
+
+        <!-- ════════════════════════════════════════════════
+             PROJECT B: E-Commerce Replatform
+             owner: manager2  |  status: planned
+             Tests "planned" state — no work logs yet
+        ════════════════════════════════════════════════ -->
+        <record id="mock_proj_ecom" model="bb.project">
+            <field name="name">[Mock] E-Commerce Replatform</field>
+            <field name="code">MCK-ECO</field>
+            <field name="owner_id" ref="mock_user_manager2"/>
+            <field name="account_manager_id" ref="mock_user_manager2"/>
+            <field name="customer_id" ref="mock_customer_retailco"/>
+            <field name="status">planned</field>
+            <field name="priority">high</field>
+            <field name="start_date">2026-05-01</field>
+            <field name="end_date">2026-10-31</field>
+            <field name="budget">180000.00</field>
+            <field name="description">&lt;p&gt;Full headless e-commerce platform: product catalog, cart, checkout, payment gateway, order management.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_backend')), (4, ref('mock_tag_frontend'))]"/>
+        </record>
+
+        <record id="mock_mem_ecom_mgr2" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="role">PM</field>
+        </record>
+        <record id="mock_mem_ecom_alice" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="role">LEAD DEV</field>
+        </record>
+
+        <record id="mock_rate_ecom_mgr2" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_ecom_mgr2"/>
+            <field name="cost_per_hour">90.00</field>
+            <field name="effective_from">2026-05-01</field>
+        </record>
+        <record id="mock_rate_ecom_alice" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_ecom_alice"/>
+            <field name="cost_per_hour">55.00</field>
+            <field name="effective_from">2026-05-01</field>
+        </record>
+
+        <!-- Scope only — project not started yet -->
+        <record id="mock_scope_ecom_catalog" model="bb.project.scope">
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="name">Product Catalog &amp; Search</field>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="estimated_hours">60.0</field>
+            <field name="estimated_rate">55.00</field>
+            <field name="notes">Category tree, filters, Elasticsearch full-text search</field>
+        </record>
+        <record id="mock_scope_ecom_cart" model="bb.project.scope">
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="name">Shopping Cart &amp; Checkout</field>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="estimated_hours">45.0</field>
+            <field name="estimated_rate">55.00</field>
+            <field name="notes">Cart, promo codes, multi-step checkout</field>
+        </record>
+        <record id="mock_scope_ecom_payment" model="bb.project.scope">
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="name">Payment Gateway Integration</field>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="estimated_hours">30.0</field>
+            <field name="estimated_rate">55.00</field>
+            <field name="notes">Stripe + VNPay + bank transfer</field>
+        </record>
+        <record id="mock_scope_ecom_pm" model="bb.project.scope">
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="name">Project Management</field>
+            <field name="assignee_id" ref="mock_user_manager2"/>
+            <field name="estimated_hours">30.0</field>
+            <field name="estimated_rate">90.00</field>
+            <field name="notes">Weekly calls, sprint planning, delivery</field>
+        </record>
+
+        <!-- Milestones: all draft (project not started) -->
+        <record id="mock_ms_ecom_m1" model="bb.project.milestone">
+            <field name="name">MVP Scope Sign-off</field>
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="due_date">2026-05-15</field>
+            <field name="status">draft</field>
+        </record>
+        <record id="mock_ms_ecom_m2" model="bb.project.milestone">
+            <field name="name">Alpha Release</field>
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="due_date">2026-07-31</field>
+            <field name="status">draft</field>
+        </record>
+        <record id="mock_ms_ecom_m3" model="bb.project.milestone">
+            <field name="name">Go-Live</field>
+            <field name="project_id" ref="mock_proj_ecom"/>
+            <field name="due_date">2026-10-31</field>
+            <field name="status">draft</field>
+        </record>
+
+        <!-- ════════════════════════════════════════════════
+             PROJECT C: Security &amp; Compliance Audit
+             owner: manager2  |  status: completed
+             All tasks done, all backlogs approved — tests full financials
+        ════════════════════════════════════════════════ -->
+        <record id="mock_proj_audit" model="bb.project">
+            <field name="name">[Mock] Security &amp; Compliance Audit</field>
+            <field name="code">MCK-SEC</field>
+            <field name="owner_id" ref="mock_user_manager2"/>
+            <field name="account_manager_id" ref="mock_user_manager2"/>
+            <field name="customer_id" ref="mock_customer_globalsec"/>
+            <field name="status">completed</field>
+            <field name="priority">high</field>
+            <field name="start_date">2025-12-01</field>
+            <field name="end_date">2026-02-28</field>
+            <field name="budget">45000.00</field>
+            <field name="description">&lt;p&gt;ISO 27001 gap assessment, penetration testing, and remediation roadmap.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_security')), (4, ref('mock_tag_backend'))]"/>
+        </record>
+
+        <record id="mock_mem_audit_mgr2" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="role">LEAD</field>
+        </record>
+        <record id="mock_mem_audit_bob" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="role">ANALYST</field>
+        </record>
+
+        <record id="mock_rate_audit_mgr2" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_audit_mgr2"/>
+            <field name="cost_per_hour">90.00</field>
+            <field name="effective_from">2025-12-01</field>
+        </record>
+        <record id="mock_rate_audit_bob" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_audit_bob"/>
+            <field name="cost_per_hour">60.00</field>
+            <field name="effective_from">2025-12-01</field>
+        </record>
+
+        <!-- Milestones: all done -->
+        <record id="mock_ms_audit_m1" model="bb.project.milestone">
+            <field name="name">Gap Assessment Complete</field>
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="due_date">2026-01-15</field>
+            <field name="status">done</field>
+            <field name="description">43 controls assessed, 18 gaps identified</field>
+        </record>
+        <record id="mock_ms_audit_m2" model="bb.project.milestone">
+            <field name="name">Pen Test &amp; Report Delivered</field>
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="due_date">2026-02-15</field>
+            <field name="status">done</field>
+            <field name="description">3 critical, 7 high, 14 medium findings</field>
+        </record>
+        <record id="mock_ms_audit_m3" model="bb.project.milestone">
+            <field name="name">Remediation Roadmap Signed Off</field>
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="due_date">2026-02-28</field>
+            <field name="status">done</field>
+            <field name="description">12-month roadmap approved by CISO</field>
+        </record>
+
+        <!-- Tasks: all done -->
+        <record id="mock_task_audit_gap" model="bb.project.task">
+            <field name="name">ISO 27001 Gap Assessment</field>
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="milestone_id" ref="mock_ms_audit_m1"/>
+            <field name="assignee_id" ref="mock_user_bob"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-01-14</field>
+            <field name="result">43 controls assessed, 18 gaps identified and risk-rated</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_security'))]"/>
+        </record>
+        <record id="mock_task_audit_pentest" model="bb.project.task">
+            <field name="name">Penetration Testing</field>
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="milestone_id" ref="mock_ms_audit_m2"/>
+            <field name="assignee_id" ref="mock_user_bob"/>
+            <field name="status">done</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-02-10</field>
+            <field name="result">3 critical patched during engagement. Full report delivered.</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_security'))]"/>
+        </record>
+        <record id="mock_task_audit_report" model="bb.project.task">
+            <field name="name">Final Report &amp; Remediation Roadmap</field>
+            <field name="project_id" ref="mock_proj_audit"/>
+            <field name="milestone_id" ref="mock_ms_audit_m3"/>
+            <field name="assignee_id" ref="mock_user_manager2"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-02-27</field>
+            <field name="result">Executive report + 12-month roadmap accepted by CISO on 2026-02-27</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_security'))]"/>
+        </record>
+
+        <!-- Work logs: all approved — tests full financial rollup on completed project -->
+        <record id="mock_bl_audit_gap_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_gap"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2025-12-05</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Control framework review — ISMS scope, policies</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_audit_gap_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_gap"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2025-12-10</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Technical controls interviews: IT, DevOps, HR</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_audit_gap_3" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_gap"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2025-12-17</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Gap register finalization and risk scoring</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_audit_pen_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_pentest"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-01-20</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">External recon, port scan, service enumeration</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_audit_pen_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_pentest"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-01-22</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Web app testing: SQLi, XSS, IDOR, auth bypass</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_audit_pen_3" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_pentest"/>
+            <field name="user_id" ref="mock_user_bob"/>
+            <field name="work_date">2026-01-25</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Internal network pen test + privilege escalation paths</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_audit_rpt_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_report"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="work_date">2026-02-18</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">90.00</field>
+            <field name="description">Executive summary + technical findings draft</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_audit_rpt_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_audit_report"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="work_date">2026-02-25</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">90.00</field>
+            <field name="description">Remediation roadmap prioritization + CISO presentation</field>
+            <field name="status">approved</field>
+        </record>
+
+        <!-- ════════════════════════════════════════════════
+             PROJECT D: Data Pipeline Modernisation
+             owner: manager2  |  status: on_hold
+             Tests on_hold state with partial work done
+        ════════════════════════════════════════════════ -->
+        <record id="mock_proj_pipeline" model="bb.project">
+            <field name="name">[Mock] Data Pipeline Modernisation</field>
+            <field name="code">MCK-DPM</field>
+            <field name="owner_id" ref="mock_user_manager2"/>
+            <field name="account_manager_id" ref="mock_user_manager2"/>
+            <field name="customer_id" ref="mock_customer_fintech"/>
+            <field name="status">on_hold</field>
+            <field name="priority">medium</field>
+            <field name="start_date">2026-01-15</field>
+            <field name="end_date">2026-06-30</field>
+            <field name="budget">60000.00</field>
+            <field name="description">&lt;p&gt;Replace batch ETL with real-time streaming pipeline. On hold — customer reorganisation underway.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_backend')), (4, ref('mock_tag_devops'))]"/>
+        </record>
+
+        <record id="mock_mem_pipe_mgr2" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_pipeline"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="role">PM</field>
+        </record>
+        <record id="mock_mem_pipe_alice" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_pipeline"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="role">DATA ENG</field>
+        </record>
+
+        <record id="mock_rate_pipe_mgr2" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_pipe_mgr2"/>
+            <field name="cost_per_hour">90.00</field>
+            <field name="effective_from">2026-01-15</field>
+        </record>
+        <record id="mock_rate_pipe_alice" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_pipe_alice"/>
+            <field name="cost_per_hour">55.00</field>
+            <field name="effective_from">2026-01-15</field>
+        </record>
+
+        <record id="mock_ms_pipe_m1" model="bb.project.milestone">
+            <field name="name">Architecture Decision Record</field>
+            <field name="project_id" ref="mock_proj_pipeline"/>
+            <field name="due_date">2026-02-10</field>
+            <field name="status">done</field>
+            <field name="description">Kafka vs Kinesis evaluated, Kafka selected</field>
+        </record>
+        <record id="mock_ms_pipe_m2" model="bb.project.milestone">
+            <field name="name">Proof of Concept</field>
+            <field name="project_id" ref="mock_proj_pipeline"/>
+            <field name="due_date">2026-03-31</field>
+            <field name="status">cancelled</field>
+            <field name="description">PoC cancelled — project put on hold before completion</field>
+        </record>
+
+        <record id="mock_task_pipe_adr" model="bb.project.task">
+            <field name="name">Architecture Decision Record (ADR)</field>
+            <field name="project_id" ref="mock_proj_pipeline"/>
+            <field name="milestone_id" ref="mock_ms_pipe_m1"/>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-02-08</field>
+            <field name="result">Kafka selected. ADR signed off by CTO.</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_devops'))]"/>
+        </record>
+        <record id="mock_task_pipe_poc" model="bb.project.task">
+            <field name="name">Kafka PoC — One Pipeline End-to-End</field>
+            <field name="project_id" ref="mock_proj_pipeline"/>
+            <field name="milestone_id" ref="mock_ms_pipe_m2"/>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="status">in_progress</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-03-20</field>
+            <field name="issues">On hold — customer reorganisation, no technical point of contact</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_devops'))]"/>
+        </record>
+
+        <record id="mock_bl_pipe_adr_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_pipe_adr"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-01-20</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Evaluated Kafka, Kinesis, Pulsar — comparison matrix</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_pipe_adr_2" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_pipe_adr"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-01-25</field>
+            <field name="hours">4.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">ADR document written + stakeholder review</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_pipe_poc_1" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_pipe_poc"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-02-15</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Kafka cluster setup + first producer/consumer</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_pipe_poc_pend" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_pipe_poc"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-03-01</field>
+            <field name="hours">5.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Schema registry + Avro serialization — awaiting approval</field>
+            <field name="status">pending</field>
+        </record>
+
+        <!-- ════════════════════════════════════════════════
+             PROJECT E: Legacy Portal Sunset
+             owner: manager2  |  status: cancelled
+             Tests cancelled state with a cancelled milestone
+        ════════════════════════════════════════════════ -->
+        <record id="mock_proj_legacy" model="bb.project">
+            <field name="name">[Mock] Legacy Portal Sunset</field>
+            <field name="code">MCK-LPS</field>
+            <field name="owner_id" ref="mock_user_manager2"/>
+            <field name="account_manager_id" ref="mock_user_manager2"/>
+            <field name="customer_id" ref="mock_customer_startup"/>
+            <field name="status">cancelled</field>
+            <field name="priority">low</field>
+            <field name="start_date">2026-01-15</field>
+            <field name="end_date">2026-03-31</field>
+            <field name="budget">20000.00</field>
+            <field name="description">&lt;p&gt;Decommission old portal. Cancelled — customer reversed decision on 2026-02-12.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_devops'))]"/>
+        </record>
+
+        <record id="mock_mem_legacy_mgr2" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_legacy"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="role">PM</field>
+        </record>
+        <record id="mock_mem_legacy_alice" model="bb.project.member">
+            <field name="project_id" ref="mock_proj_legacy"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="role">DEV</field>
+        </record>
+
+        <record id="mock_rate_legacy_mgr2" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_legacy_mgr2"/>
+            <field name="cost_per_hour">80.00</field>
+            <field name="effective_from">2026-01-15</field>
+        </record>
+        <record id="mock_rate_legacy_alice" model="bb.project.member.rate">
+            <field name="member_id" ref="mock_mem_legacy_alice"/>
+            <field name="cost_per_hour">50.00</field>
+            <field name="effective_from">2026-01-15</field>
+        </record>
+
+        <record id="mock_ms_legacy_m1" model="bb.project.milestone">
+            <field name="name">Traffic Redirect Plan</field>
+            <field name="project_id" ref="mock_proj_legacy"/>
+            <field name="due_date">2026-02-15</field>
+            <field name="status">cancelled</field>
+            <field name="description">Cancelled with project — 301 redirect rules never deployed</field>
+        </record>
+
+        <record id="mock_task_legacy_inv" model="bb.project.task">
+            <field name="name">Portal Asset Inventory</field>
+            <field name="project_id" ref="mock_proj_legacy"/>
+            <field name="milestone_id" ref="mock_ms_legacy_m1"/>
+            <field name="assignee_id" ref="mock_user_alice"/>
+            <field name="status">done</field>
+            <field name="priority">medium</field>
+            <field name="end_at">2026-01-30</field>
+            <field name="result">47 pages, 12 active accounts, 3 integrations documented</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_devops'))]"/>
+        </record>
+        <record id="mock_task_legacy_plan" model="bb.project.task">
+            <field name="name">Decommission &amp; Redirect Plan</field>
+            <field name="project_id" ref="mock_proj_legacy"/>
+            <field name="milestone_id" ref="mock_ms_legacy_m1"/>
+            <field name="assignee_id" ref="mock_user_manager2"/>
+            <field name="status">in_progress</field>
+            <field name="priority">medium</field>
+            <field name="end_at">2026-02-20</field>
+            <field name="issues">Cancelled — customer reversed decision on 2026-02-12</field>
+            <field name="tag_ids" eval="[(4, ref('mock_tag_devops'))]"/>
+        </record>
+
+        <record id="mock_bl_legacy_inv" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_legacy_inv"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-01-20</field>
+            <field name="hours">5.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Page inventory and screenshot archive</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="mock_bl_legacy_inv_rej" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_legacy_inv"/>
+            <field name="user_id" ref="mock_user_alice"/>
+            <field name="work_date">2026-01-25</field>
+            <field name="hours">3.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">User account audit (incorrect time entry — resubmit)</field>
+            <field name="status">rejected</field>
+        </record>
+        <record id="mock_bl_legacy_pm" model="bb.project.backlog">
+            <field name="task_id" ref="mock_task_legacy_plan"/>
+            <field name="user_id" ref="mock_user_manager2"/>
+            <field name="work_date">2026-02-05</field>
+            <field name="hours">2.0</field>
+            <field name="cost_per_hour_snapshot">80.00</field>
+            <field name="description">Kick-off call + initial decommission checklist</field>
+            <field name="status">approved</field>
+        </record>
+
+    </data>
+</odoo>

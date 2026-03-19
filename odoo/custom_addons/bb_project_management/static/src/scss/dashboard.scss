@@ -404,3 +404,27 @@
         &.danger { background: linear-gradient(90deg, #f5576c, #fa709a); }
     }
 }
+
+.bb_home_btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: rgba(255,255,255,.08);
+    color: var(--bb-text-muted, #94a3b8);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    border: 1px solid rgba(255,255,255,.1);
+    transition: background .2s, color .2s;
+    white-space: nowrap;
+
+    &:hover {
+        background: rgba(255,255,255,.15);
+        color: #fff;
+        text-decoration: none;
+    }
+
+    svg { flex-shrink: 0; }
+}

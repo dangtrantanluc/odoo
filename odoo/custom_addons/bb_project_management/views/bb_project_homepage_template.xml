@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <template id="bb_project_homepage_template" name="BB Project Homepage">
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <title>Dự Án — BBSW</title>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"/>
+            <link rel="preconnect" href="https://fonts.googleapis.com"/>
+            <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"/>
+            <!-- Reuse thuchi shared styles (available because bb_project_management depends on bbsw_thuchi) -->
+            <link rel="stylesheet" t-att-href="'/bbsw_thuchi/static/src/css/thuchi_homepage.css'"/>
+            <link rel="stylesheet" t-att-href="'/bbsw_thuchi/static/src/css/thuchi_page.css'"/>
+            <!-- Project-specific overrides -->
+            <link rel="stylesheet" t-att-href="'/bb_project_management/static/src/css/bb_project_page.css'"/>
+        </head>
+        <body class="tc-body">
+
+        <!-- ── Header ── -->
+        <header class="tc-header">
+            <div class="tc-header-inner">
+                <div class="tc-header-left">
+                    <a href="/project/home" class="tc-back-btn" title="Trang chủ">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                    </a>
+                    <div class="tc-title">
+                        <div class="tc-title-icon proj-title-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1>Dự Án</h1>
+                            <p>Quản lý dự án &amp; công việc</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tc-header-right">
+                    <!-- Open full Odoo backend -->
+                    <a href="/web#action=bb_project_management.action_bb_project" class="proj-open-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                        </svg>
+                        <span>Mở quản lý đầy đủ</span>
+                    </a>
+
+                    <!-- User dropdown -->
+                    <div class="dropdown">
+                        <button type="button" class="hp-user-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <img t-attf-src="/web/image?model=res.users&amp;id={{ current_user.id }}&amp;field=avatar_128"
+                                 alt="Avatar" class="hp-avatar"/>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="13" height="13" class="hp-chevron">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end hp-dropdown">
+                            <div class="hp-dd-header">
+                                <strong><t t-esc="current_user.name"/></strong>
+                                <small><t t-esc="current_user.email"/></small>
+                            </div>
+                            <div class="dropdown-divider"/>
+                            <a href="/project/home" class="dropdown-item">Trang chủ</a>
+                            <t t-if="is_admin">
+                                <div class="dropdown-divider"/>
+                                <span class="dropdown-item-text text-muted" style="font-size:11px;padding:4px 16px;">Quản trị</span>
+                                <a href="/web#action=bb_project_management.action_bb_project" class="dropdown-item">Tất cả dự án</a>
+                                <a href="/web#action=bb_project_management.action_bb_project_task" class="dropdown-item">Tất cả công việc</a>
+                            </t>
+                            <div class="dropdown-divider"/>
+                            <a href="/web/session/logout?redirect=/" class="dropdown-item text-danger">Đăng xuất</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- ── Main ── -->
+        <main class="tc-main">
+
+            <!-- KPI Stats (5 cards) -->
+            <div class="proj-stats">
+                <div class="tc-stat-card proj-stat-projects">
+                    <div class="tc-stat-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="tc-stat-label">Tổng dự án</div>
+                        <div class="tc-stat-value"><t t-esc="stats['total_projects']"/></div>
+                    </div>
+                </div>
+
+                <div class="tc-stat-card proj-stat-active">
+                    <div class="tc-stat-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="tc-stat-label">Đang tiến hành</div>
+                        <div class="tc-stat-value"><t t-esc="stats['active_projects']"/></div>
+                    </div>
+                </div>
+
+                <div class="tc-stat-card proj-stat-tasks">
+                    <div class="tc-stat-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="tc-stat-label">Tổng công việc</div>
+                        <div class="tc-stat-value"><t t-esc="stats['total_tasks']"/></div>
+                    </div>
+                </div>
+
+                <div class="tc-stat-card proj-stat-pending">
+                    <div class="tc-stat-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="tc-stat-label">Chờ duyệt</div>
+                        <div class="tc-stat-value"><t t-esc="stats['pending_logs']"/></div>
+                    </div>
+                </div>
+
+                <div class="tc-stat-card proj-stat-spent">
+                    <div class="tc-stat-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="tc-stat-label">Đã chi tiêu</div>
+                        <div class="tc-stat-value" id="statSpent"><t t-esc="stats['total_spent']"/></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Projects -->
+            <div>
+                <div class="proj-section-header">
+                    <p class="proj-section-title">Dự án gần đây</p>
+                    <a href="/web#action=bb_project_management.action_bb_project" class="proj-see-all">
+                        Xem tất cả
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                </div>
+
+                <div class="proj-table-wrap">
+                    <t t-if="recent_projects">
+                        <div class="tc-table-scroll">
+                            <table class="proj-table">
+                                <thead>
+                                    <tr>
+                                        <th>Dự án</th>
+                                        <th>Trạng thái</th>
+                                        <th>Ưu tiên</th>
+                                        <th>Chủ dự án</th>
+                                        <th>Công việc</th>
+                                        <th>Ngân sách / Chi tiêu</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="recent_projects" t-as="p">
+                                        <tr t-attf-onclick="location.href='/web#model=bb.project&amp;id={{ p.id }}&amp;view_type=form'">
+                                            <td>
+                                                <div class="proj-name-cell">
+                                                    <strong><t t-esc="p.name"/></strong>
+                                                    <small t-if="p.code"><t t-esc="p.code"/></small>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <t t-if="p.status == 'planned'">
+                                                    <span class="proj-status status-planned">Kế hoạch</span>
+                                                </t>
+                                                <t t-elif="p.status == 'in_progress'">
+                                                    <span class="proj-status status-in-progress">Đang tiến hành</span>
+                                                </t>
+                                                <t t-elif="p.status == 'on_hold'">
+                                                    <span class="proj-status status-on-hold">Tạm dừng</span>
+                                                </t>
+                                                <t t-elif="p.status == 'completed'">
+                                                    <span class="proj-status status-completed">Hoàn thành</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="proj-status status-cancelled">Đã hủy</span>
+                                                </t>
+                                            </td>
+                                            <td>
+                                                <t t-if="p.priority == 'low'">
+                                                    <span class="proj-priority prio-low">Thấp</span>
+                                                </t>
+                                                <t t-elif="p.priority == 'medium'">
+                                                    <span class="proj-priority prio-medium">Trung bình</span>
+                                                </t>
+                                                <t t-elif="p.priority == 'high'">
+                                                    <span class="proj-priority prio-high">Cao</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="proj-priority prio-critical">Khẩn cấp</span>
+                                                </t>
+                                            </td>
+                                            <td>
+                                                <span style="font-size:0.84rem;color:#374151;">
+                                                    <t t-esc="p.owner_id.name"/>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span style="font-size:0.84rem;color:#374151;">
+                                                    <t t-esc="p.task_count"/>
+                                                    <span style="color:#9ca3af;font-size:0.75rem;"> công việc</span>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="proj-budget-bar-wrap">
+                                                    <div class="proj-budget-nums">
+                                                        <span class="budget-spent-fmt" t-att-data-val="p.total_cost">—</span>
+                                                        <span class="budget-total-fmt" t-att-data-val="p.budget or 0">—</span>
+                                                    </div>
+                                                    <div class="proj-budget-bar-bg">
+                                                        <div class="proj-budget-bar-fill"
+                                                             t-attf-class="proj-budget-bar-fill{{ ' over' if p.budget and p.total_cost > p.budget else '' }}"
+                                                             t-attf-style="width:{{ [min(100, round(p.total_cost / p.budget * 100)) if p.budget else 0][0] }}%">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </t>
+                    <t t-else="">
+                        <div class="proj-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                            </svg>
+                            <p>Chưa có dự án nào. Hãy tạo dự án đầu tiên!</p>
+                            <a href="/web#model=bb.project&amp;view_type=form" class="proj-open-btn" style="margin-top:4px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                </svg>
+                                <span>Tạo dự án mới</span>
+                            </a>
+                        </div>
+                    </t>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Currency formatter -->
+        <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var fmt = function (v) {
+                return new Intl.NumberFormat('vi-VN', {
+                    style: 'currency', currency: 'VND',
+                    minimumFractionDigits: 0, maximumFractionDigits: 0,
+                }).format(v || 0);
+            };
+            // Format spent stat card
+            var statSpent = document.getElementById('statSpent');
+            if (statSpent) statSpent.textContent = fmt(parseFloat(statSpent.textContent) || 0);
+            // Format budget bars
+            document.querySelectorAll('.budget-spent-fmt').forEach(function (el) {
+                el.textContent = fmt(parseFloat(el.dataset.val) || 0);
+            });
+            document.querySelectorAll('.budget-total-fmt').forEach(function (el) {
+                el.textContent = fmt(parseFloat(el.dataset.val) || 0);
+            });
+        });
+        </script>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        </body>
+        </html>
+    </template>
+
+</odoo>

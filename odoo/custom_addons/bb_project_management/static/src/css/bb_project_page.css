@@ -1,0 +1,203 @@
+/* ═══════════════════════════════════════════════
+   BB Project Management — Landing Page
+   (extends bbsw_thuchi's thuchi_page.css)
+   ═══════════════════════════════════════════════ */
+
+/* ── Title icon: teal to match the Dự Án app tile ── */
+.proj-title-icon {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
+/* ── Open backend button: teal ── */
+.proj-open-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: #0f766e;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    font-family: inherit;
+    transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.proj-open-btn:hover {
+    background: #115e59;
+    box-shadow: 0 4px 12px rgba(15,118,110,0.30);
+    transform: translateY(-1px);
+    color: #fff;
+}
+.proj-open-btn:active { transform: none; box-shadow: none; }
+.proj-open-btn svg    { width: 14px; height: 14px; }
+.proj-open-btn span   { display: none; }
+@media (min-width: 480px) { .proj-open-btn span { display: inline; } }
+
+/* ── KPI stat cards — 5-column grid ── */
+.proj-stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+}
+@media (max-width: 900px) { .proj-stats { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 540px) { .proj-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
+
+.proj-stat-projects  .tc-stat-icon { background: #ccfbf1; color: #0f766e; }
+.proj-stat-active    .tc-stat-icon { background: #dbeafe; color: #1d4ed8; }
+.proj-stat-tasks     .tc-stat-icon { background: #f3e8ff; color: #7c3aed; }
+.proj-stat-pending   .tc-stat-icon { background: #fef3c7; color: #d97706; }
+.proj-stat-spent     .tc-stat-icon { background: #d1fae5; color: #059669; }
+
+/* ── Section heading ── */
+.proj-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+.proj-section-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 0;
+}
+.proj-see-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #0f766e;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+.proj-see-all:hover { color: #115e59; text-decoration: underline; }
+.proj-see-all svg   { width: 13px; height: 13px; }
+
+/* ── Project table ── */
+.proj-table-wrap {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    overflow: hidden;
+}
+
+.proj-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 560px;
+}
+
+.proj-table thead th {
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid #f3f4f6;
+    background: #fafafa;
+    white-space: nowrap;
+}
+
+.proj-table tbody tr {
+    border-bottom: 1px solid #f3f4f6;
+    transition: background 0.1s;
+    cursor: pointer;
+}
+.proj-table tbody tr:last-child { border-bottom: none; }
+.proj-table tbody tr:hover      { background: #f8fffe; }
+
+.proj-table tbody td {
+    padding: 11px 14px;
+    font-size: 0.855rem;
+    vertical-align: middle;
+}
+
+.proj-name-cell strong {
+    display: block;
+    font-weight: 600;
+    color: #111827;
+}
+.proj-name-cell small {
+    display: block;
+    font-size: 0.72rem;
+    color: #9ca3af;
+    font-family: monospace;
+    margin-top: 1px;
+}
+
+/* ── Status badges ── */
+.proj-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 99px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.status-planned     { background: #f1f5f9; color: #475569; }
+.status-in-progress { background: #dbeafe; color: #1d4ed8; }
+.status-on-hold     { background: #fef3c7; color: #d97706; }
+.status-completed   { background: #d1fae5; color: #059669; }
+.status-cancelled   { background: #fee2e2; color: #dc2626; }
+
+/* ── Priority badge ── */
+.proj-priority {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.prio-low      { background: #f1f5f9; color: #64748b; }
+.prio-medium   { background: #dbeafe; color: #1d4ed8; }
+.prio-high     { background: #fef3c7; color: #d97706; }
+.prio-critical { background: #fee2e2; color: #dc2626; }
+
+/* ── Budget bar ── */
+.proj-budget-bar-wrap { min-width: 100px; }
+.proj-budget-bar-bg {
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 99px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+.proj-budget-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: #0f766e;
+    transition: width 0.4s ease;
+}
+.proj-budget-bar-fill.over { background: #dc2626; }
+.proj-budget-nums {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: #9ca3af;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Empty state ── */
+.proj-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 56px 20px;
+    color: #9ca3af;
+    text-align: center;
+}
+.proj-empty svg { width: 48px; height: 48px; opacity: 0.4; }
+.proj-empty p   { margin: 0; font-size: 0.875rem; }

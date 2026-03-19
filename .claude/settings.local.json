@@ -2,7 +2,20 @@
   "permissions": {
     "allow": [
       "Bash(ls /home/bbsw/odoo/redesign 2>/dev/null && cat /home/bbsw/odoo/redesign/* 2>/dev/null || echo \"no redesign dir\")",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(find /home/bbsw/pm -type f -name *homepage*)",
+      "Bash(grep -E \"\\\\.\\(xml|py|js|scss|css\\)$\")",
+      "Bash(for db:*)",
+      "Bash(do)",
+      "Bash(echo \"=== DB: $db ===\")",
+      "Bash(done)",
+      "Bash(find /home/bbsw/pm/agent -type f -name *.py)",
+      "Bash(grep -r \"domain=\" /home/bbsw/pm/odoo/custom_addons/bb_project_management/views/*.xml)",
+      "Bash(grep -n \"\\\\.today\\(\\)\\\\|Date\\\\\\(\\\\\\)\" /home/bbsw/pm/odoo/custom_addons/bb_project_management/models/*.py)",
+      "Bash(grep -r bbsw.home.app /home/bbsw/pm/odoo/custom_addons/bbsw_thuchi --include=*.py --include=*.xml)",
+      "Bash(grep -n \"action_bb_project\" /home/bbsw/pm/odoo/custom_addons/bb_project_management/views/*.xml)",
+      "Bash(git rm:*)"
     ]
   }
 }

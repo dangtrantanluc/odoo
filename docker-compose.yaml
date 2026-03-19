@@ -49,6 +49,7 @@ services:
       - "8069:8069"
     volumes:
       - ./project_addons:/mnt/extra-addons
+      - ./odoo/custom_addons:/mnt/custom-addons
     environment:
       - HOST=db
       - USER=admin
@@ -59,7 +60,7 @@ services:
       --db_host db
       --db_user admin
       --db_password admin123
-      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
+      --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/custom-addons
     networks:
       - pm_network
       

@@ -6,6 +6,8 @@ import { Component, onMounted, useState } from "@odoo/owl";
 // SVG donut chart radius & circumference
 const R = 42, CIRC = 2 * Math.PI * R;
 
+const CURRENCY = "VND";
+
 function computeDonut(values, colors) {
     const total = values.reduce((s, v) => s + (v || 0), 0) || 1;
     let prior = 0;
@@ -245,7 +247,7 @@ class BbProjectDashboard extends Component {
     // ── formatting ────────────────────────────────────────
     fmt(v) {
         return new Intl.NumberFormat(undefined, {
-            style: "currency", currency: "VND",
+            style: "currency", currency: CURRENCY,
             minimumFractionDigits: 0, maximumFractionDigits: 0,
         }).format(v || 0);
     }

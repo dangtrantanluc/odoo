@@ -590,5 +590,679 @@
             <field name="status">pending</field>
         </record>
 
+        <!-- ══════════════════════════════════════════════════════════════════
+             EXTENDED MOCK DATA FOR manager2 SYSTEM TESTING
+             Covers: all project statuses, all task statuses, all backlog
+             statuses, milestones (all statuses), rate history, over-budget,
+             completed project financials, cancelled project.
+             Login: manager2 / manager2
+        ══════════════════════════════════════════════════════════════════ -->
+
+        <!-- ── Milestones for Project 1: AI Chatbot Platform ── -->
+        <record id="milestone_ai_design" model="bb.project.milestone">
+            <field name="name">Architecture &amp; Design Complete</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="due_date">2026-02-15</field>
+            <field name="status">done</field>
+            <field name="description">All technical specs designed and signed off by client</field>
+        </record>
+        <record id="milestone_ai_mvp" model="bb.project.milestone">
+            <field name="name">Core Features MVP</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="due_date">2026-04-30</field>
+            <field name="status">in_progress</field>
+            <field name="description">Chat UI + NLP engine working end-to-end</field>
+        </record>
+        <record id="milestone_ai_launch" model="bb.project.milestone">
+            <field name="name">Production Launch</field>
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="due_date">2026-06-30</field>
+            <field name="status">draft</field>
+            <field name="description">Deploy to production, go-live with Acme Corp</field>
+        </record>
+
+        <!-- ── Milestones for Project 2: Mobile App ── -->
+        <record id="milestone_mobile_research" model="bb.project.milestone">
+            <field name="name">UX Research Complete</field>
+            <field name="project_id" ref="project_mobile"/>
+            <field name="due_date">2026-01-20</field>
+            <field name="status">done</field>
+            <field name="description">All user interviews and wireframes delivered</field>
+        </record>
+        <record id="milestone_mobile_beta" model="bb.project.milestone">
+            <field name="name">Beta Release</field>
+            <field name="project_id" ref="project_mobile"/>
+            <field name="due_date">2026-03-31</field>
+            <field name="status">in_progress</field>
+            <field name="description">All screens implemented and in internal testing</field>
+        </record>
+        <record id="milestone_mobile_dropped" model="bb.project.milestone">
+            <field name="name">Dark Mode Support</field>
+            <field name="project_id" ref="project_mobile"/>
+            <field name="due_date">2026-02-28</field>
+            <field name="status">cancelled</field>
+            <field name="description">Descoped due to timeline pressure</field>
+        </record>
+
+        <!-- ── manager2 as team member on Project 1 (AI Chatbot) ── -->
+        <!-- Role: Account — bridges client and dev team -->
+        <record id="member_ai_manager2" model="bb.project.member">
+            <field name="project_id" ref="project_ai_chatbot"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="role">ACCOUNT</field>
+        </record>
+
+        <!-- Rate history: promoted mid-project (tests _compute_current_rate) -->
+        <record id="rate_ai_mgr2_v1" model="bb.project.member.rate">
+            <field name="member_id" ref="member_ai_manager2"/>
+            <field name="cost_per_hour">60.00</field>
+            <field name="effective_from">2026-01-01</field>
+            <field name="effective_to">2026-01-31</field>
+        </record>
+        <record id="rate_ai_mgr2_v2" model="bb.project.member.rate">
+            <field name="member_id" ref="member_ai_manager2"/>
+            <field name="cost_per_hour">70.00</field>
+            <field name="effective_from">2026-02-01</field>
+        </record>
+
+        <!-- Work logs for manager2 on Project 1 (approved, pending, rejected) -->
+        <record id="backlog_ai_mgr2_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_ai_nlp"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-01-22</field>
+            <field name="hours">4.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Requirements review and sign-off session with Acme Corp</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="backlog_ai_mgr2_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_ai_ui"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-02-20</field>
+            <field name="hours">3.0</field>
+            <field name="cost_per_hour_snapshot">70.00</field>
+            <field name="description">Live demo session with Acme Corp stakeholders — awaiting sign-off</field>
+            <field name="status">pending</field>
+        </record>
+        <record id="backlog_ai_mgr2_3" model="bb.project.backlog">
+            <field name="task_id" ref="task_ai_testing"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-03-01</field>
+            <field name="hours">2.0</field>
+            <field name="cost_per_hour_snapshot">70.00</field>
+            <field name="description">UAT planning (duplicate entry — already logged on 2026-02-28)</field>
+            <field name="status">rejected</field>
+        </record>
+
+        <!-- ══════════════════════════════════════════════════════════════
+             PROJECT 5: CRM System Migration
+             owner: manager2  |  status: in_progress  |  OVER BUDGET
+        ══════════════════════════════════════════════════════════════ -->
+        <record id="customer_fintech" model="res.partner">
+            <field name="name">FinTech Solutions JSC</field>
+            <field name="is_company">True</field>
+            <field name="email">contact@fintech.example.com</field>
+            <field name="phone">+84-28-7777-8888</field>
+        </record>
+
+        <record id="project_crm" model="bb.project">
+            <field name="name">CRM System Migration</field>
+            <field name="code">CSM-005</field>
+            <field name="owner_id" ref="user_sub_manager"/>
+            <field name="account_manager_id" ref="user_sub_manager"/>
+            <field name="customer_id" ref="customer_fintech"/>
+            <field name="status">in_progress</field>
+            <field name="priority">critical</field>
+            <field name="start_date">2026-02-01</field>
+            <field name="end_date">2026-04-30</field>
+            <field name="budget">30000.00</field>
+            <field name="description">&lt;p&gt;Migrate legacy CRM to new platform. Data mapping, ETL, re-training users. Budget is tight — watch costs closely.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend')), (4, ref('tag_devops'))]"/>
+        </record>
+
+        <!-- Members -->
+        <record id="member_crm_mgr2" model="bb.project.member">
+            <field name="project_id" ref="project_crm"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="role">PM</field>
+        </record>
+        <record id="member_crm_m1" model="bb.project.member">
+            <field name="project_id" ref="project_crm"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="role">DEV</field>
+        </record>
+        <record id="member_crm_m2" model="bb.project.member">
+            <field name="project_id" ref="project_crm"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="role">DEV</field>
+        </record>
+
+        <!-- Rate history for manager2 on P5 (rate bump after month 1) -->
+        <record id="rate_crm_mgr2_v1" model="bb.project.member.rate">
+            <field name="member_id" ref="member_crm_mgr2"/>
+            <field name="cost_per_hour">80.00</field>
+            <field name="effective_from">2026-02-01</field>
+            <field name="effective_to">2026-02-28</field>
+        </record>
+        <record id="rate_crm_mgr2_v2" model="bb.project.member.rate">
+            <field name="member_id" ref="member_crm_mgr2"/>
+            <field name="cost_per_hour">90.00</field>
+            <field name="effective_from">2026-03-01</field>
+        </record>
+        <record id="rate_crm_m1" model="bb.project.member.rate">
+            <field name="member_id" ref="member_crm_m1"/>
+            <field name="cost_per_hour">50.00</field>
+            <field name="effective_from">2026-02-01</field>
+        </record>
+        <record id="rate_crm_m2" model="bb.project.member.rate">
+            <field name="member_id" ref="member_crm_m2"/>
+            <field name="cost_per_hour">55.00</field>
+            <field name="effective_from">2026-02-01</field>
+        </record>
+
+        <!-- Scope items -->
+        <record id="scope_crm_mapping" model="bb.project.scope">
+            <field name="project_id" ref="project_crm"/>
+            <field name="name">Data Mapping &amp; Schema Design</field>
+            <field name="assignee_id" ref="user_member2"/>
+            <field name="estimated_hours">30.0</field>
+            <field name="estimated_rate">55.00</field>
+            <field name="notes">Map 140 legacy fields to new schema, handle nulls</field>
+        </record>
+        <record id="scope_crm_etl" model="bb.project.scope">
+            <field name="project_id" ref="project_crm"/>
+            <field name="name">ETL Migration Scripts</field>
+            <field name="assignee_id" ref="user_member1"/>
+            <field name="estimated_hours">40.0</field>
+            <field name="estimated_rate">50.00</field>
+            <field name="notes">Python scripts + dry-run validation</field>
+        </record>
+        <record id="scope_crm_testing" model="bb.project.scope">
+            <field name="project_id" ref="project_crm"/>
+            <field name="name">Data Integrity Testing</field>
+            <field name="assignee_id" ref="user_member2"/>
+            <field name="estimated_hours">20.0</field>
+            <field name="estimated_rate">55.00</field>
+            <field name="notes">Row count checks, spot audits, rollback plan</field>
+        </record>
+        <record id="scope_crm_pm" model="bb.project.scope">
+            <field name="project_id" ref="project_crm"/>
+            <field name="name">Project Management &amp; Client Comms</field>
+            <field name="assignee_id" ref="user_sub_manager"/>
+            <field name="estimated_hours">20.0</field>
+            <field name="estimated_rate">80.00</field>
+            <field name="notes">Weekly status calls, risk log, stakeholder updates</field>
+        </record>
+        <record id="scope_crm_cutover" model="bb.project.scope">
+            <field name="project_id" ref="project_crm"/>
+            <field name="name">Production Cut-over &amp; Hypercare</field>
+            <field name="assignee_id" ref="user_sub_manager"/>
+            <field name="estimated_hours">15.0</field>
+            <field name="estimated_rate">90.00</field>
+            <field name="notes">Weekend cut-over, 2-week hypercare support</field>
+        </record>
+
+        <!-- Milestones (draft / in_progress / done) -->
+        <record id="milestone_crm_m1" model="bb.project.milestone">
+            <field name="name">Data Mapping Approved</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="due_date">2026-02-28</field>
+            <field name="status">done</field>
+            <field name="description">Customer signed off on field mapping document</field>
+        </record>
+        <record id="milestone_crm_m2" model="bb.project.milestone">
+            <field name="name">Dry-Run Migration Passed</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="due_date">2026-03-31</field>
+            <field name="status">in_progress</field>
+            <field name="description">ETL scripts running cleanly on staging clone</field>
+        </record>
+        <record id="milestone_crm_m3" model="bb.project.milestone">
+            <field name="name">Production Cut-over</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="due_date">2026-04-26</field>
+            <field name="status">draft</field>
+            <field name="description">Weekend cut-over window, legacy system decommission</field>
+        </record>
+
+        <!-- Tasks — all 4 statuses + linked to milestones -->
+        <record id="task_crm_mapping" model="bb.project.task">
+            <field name="name">Legacy Field Mapping Document</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="milestone_id" ref="milestone_crm_m1"/>
+            <field name="assignee_id" ref="user_member2"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-02-20</field>
+            <field name="result">140 fields mapped, 12 deprecated fields flagged for archival</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+        <record id="task_crm_etl" model="bb.project.task">
+            <field name="name">ETL Migration Scripts</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="milestone_id" ref="milestone_crm_m2"/>
+            <field name="assignee_id" ref="user_member1"/>
+            <field name="status">review</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-03-25</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+        <record id="task_crm_dryrun" model="bb.project.task">
+            <field name="name">Dry-Run on Staging &amp; Data Audit</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="milestone_id" ref="milestone_crm_m2"/>
+            <field name="assignee_id" ref="user_member2"/>
+            <field name="status">in_progress</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-03-31</field>
+            <field name="issues">2 tables showing row-count mismatch — investigating timezone delta</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+        <record id="task_crm_cutover" model="bb.project.task">
+            <field name="name">Production Cut-over Weekend</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="milestone_id" ref="milestone_crm_m3"/>
+            <field name="assignee_id" ref="user_sub_manager"/>
+            <field name="status">todo</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-04-27</field>
+            <field name="tag_ids" eval="[(4, ref('tag_devops'))]"/>
+        </record>
+        <record id="task_crm_hypercare" model="bb.project.task">
+            <field name="name">Hypercare &amp; User Training</field>
+            <field name="project_id" ref="project_crm"/>
+            <field name="milestone_id" ref="milestone_crm_m3"/>
+            <field name="assignee_id" ref="user_sub_manager"/>
+            <field name="status">todo</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-04-30</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+
+        <!-- Work logs — heavily approved, creating over-budget situation -->
+        <record id="bl_crm_map_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_mapping"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-02-03</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Extracted legacy schema, built mapping spreadsheet</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_map_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_mapping"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-02-05</field>
+            <field name="hours">7.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Customer review session + revisions</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_map_3" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_mapping"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-02-10</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Final sign-off doc + archive list</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_etl_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_etl"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="work_date">2026-02-15</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Python ETL core — read/transform/load pipeline</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_etl_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_etl"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="work_date">2026-02-18</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Edge-case handling: nulls, duplicates, encoding errors</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_etl_3" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_etl"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="work_date">2026-02-22</field>
+            <field name="hours">7.5</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Unit tests for all 14 transform functions</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_etl_4" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_etl"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="work_date">2026-03-01</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Code review fixes and staging deploy</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_dryrun_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_dryrun"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-03-05</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">First dry-run: 138/140 tables passed, 2 mismatches found</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_dryrun_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_dryrun"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-03-10</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Investigating timezone mismatch in appointments table</field>
+            <field name="status">pending</field>
+        </record>
+        <record id="bl_crm_dryrun_3" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_dryrun"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-03-08</field>
+            <field name="hours">4.0</field>
+            <field name="cost_per_hour_snapshot">55.00</field>
+            <field name="description">Initial audit pass (auto-generated — rejected, see 2026-03-05 entry)</field>
+            <field name="status">rejected</field>
+        </record>
+        <record id="bl_crm_pm_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_cutover"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-02-10</field>
+            <field name="hours">3.0</field>
+            <field name="cost_per_hour_snapshot">80.00</field>
+            <field name="description">Weekly status call + risk register update</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_crm_pm_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_crm_cutover"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-03-03</field>
+            <field name="hours">4.0</field>
+            <field name="cost_per_hour_snapshot">90.00</field>
+            <field name="description">Cut-over plan document + FinTech sign-off meeting</field>
+            <field name="status">pending</field>
+        </record>
+
+        <!-- ══════════════════════════════════════════════════════════════
+             PROJECT 6: Security &amp; Compliance Audit
+             owner: manager2  |  status: completed  |  all approved
+        ══════════════════════════════════════════════════════════════ -->
+        <record id="project_audit" model="bb.project">
+            <field name="name">Security &amp; Compliance Audit</field>
+            <field name="code">SCA-006</field>
+            <field name="owner_id" ref="user_sub_manager"/>
+            <field name="account_manager_id" ref="user_sub_manager"/>
+            <field name="customer_id" ref="customer_globex"/>
+            <field name="status">completed</field>
+            <field name="priority">high</field>
+            <field name="start_date">2025-12-01</field>
+            <field name="end_date">2026-02-28</field>
+            <field name="budget">45000.00</field>
+            <field name="description">&lt;p&gt;Full ISO 27001 gap assessment, penetration testing, and remediation roadmap for Globex Corporation.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+
+        <record id="member_audit_mgr2" model="bb.project.member">
+            <field name="project_id" ref="project_audit"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="role">LEAD</field>
+        </record>
+        <record id="member_audit_m2" model="bb.project.member">
+            <field name="project_id" ref="project_audit"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="role">ANALYST</field>
+        </record>
+
+        <record id="rate_audit_mgr2" model="bb.project.member.rate">
+            <field name="member_id" ref="member_audit_mgr2"/>
+            <field name="cost_per_hour">90.00</field>
+            <field name="effective_from">2025-12-01</field>
+        </record>
+        <record id="rate_audit_m2" model="bb.project.member.rate">
+            <field name="member_id" ref="member_audit_m2"/>
+            <field name="cost_per_hour">60.00</field>
+            <field name="effective_from">2025-12-01</field>
+        </record>
+
+        <!-- Milestones — all done (completed project) -->
+        <record id="milestone_audit_m1" model="bb.project.milestone">
+            <field name="name">Gap Assessment Complete</field>
+            <field name="project_id" ref="project_audit"/>
+            <field name="due_date">2026-01-15</field>
+            <field name="status">done</field>
+            <field name="description">ISO 27001 controls gap analysis delivered</field>
+        </record>
+        <record id="milestone_audit_m2" model="bb.project.milestone">
+            <field name="name">Pen Test &amp; Report Delivered</field>
+            <field name="project_id" ref="project_audit"/>
+            <field name="due_date">2026-02-15</field>
+            <field name="status">done</field>
+            <field name="description">External pen test completed, findings documented</field>
+        </record>
+        <record id="milestone_audit_m3" model="bb.project.milestone">
+            <field name="name">Remediation Roadmap Signed Off</field>
+            <field name="project_id" ref="project_audit"/>
+            <field name="due_date">2026-02-28</field>
+            <field name="status">done</field>
+            <field name="description">12-month remediation plan approved by Globex CISO</field>
+        </record>
+
+        <!-- Tasks — all done -->
+        <record id="task_audit_gap" model="bb.project.task">
+            <field name="name">ISO 27001 Gap Assessment</field>
+            <field name="project_id" ref="project_audit"/>
+            <field name="milestone_id" ref="milestone_audit_m1"/>
+            <field name="assignee_id" ref="user_member2"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-01-14</field>
+            <field name="result">43 controls assessed, 18 gaps identified, risk-rated</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+        <record id="task_audit_pentest" model="bb.project.task">
+            <field name="name">Penetration Testing</field>
+            <field name="project_id" ref="project_audit"/>
+            <field name="milestone_id" ref="milestone_audit_m2"/>
+            <field name="assignee_id" ref="user_member2"/>
+            <field name="status">done</field>
+            <field name="priority">critical</field>
+            <field name="end_at">2026-02-10</field>
+            <field name="result">3 critical, 7 high, 14 medium findings. All critical patched during engagement.</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+        <record id="task_audit_report" model="bb.project.task">
+            <field name="name">Final Report &amp; Remediation Roadmap</field>
+            <field name="project_id" ref="project_audit"/>
+            <field name="milestone_id" ref="milestone_audit_m3"/>
+            <field name="assignee_id" ref="user_sub_manager"/>
+            <field name="status">done</field>
+            <field name="priority">high</field>
+            <field name="end_at">2026-02-27</field>
+            <field name="result">Executive report delivered. Roadmap accepted by Globex CISO on 2026-02-27.</field>
+            <field name="tag_ids" eval="[(4, ref('tag_backend'))]"/>
+        </record>
+
+        <!-- Work logs — all approved, shows full financial rollup -->
+        <record id="bl_audit_gap_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_gap"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2025-12-05</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Control framework review (ISMS scope, policies)</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_audit_gap_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_gap"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2025-12-10</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Technical controls interviews (IT, DevOps, HR)</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_audit_gap_3" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_gap"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2025-12-17</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Gap register finalization and risk scoring</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_audit_pen_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_pentest"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-01-20</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">External recon, port scan, service enumeration</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_audit_pen_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_pentest"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-01-22</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Web app testing: SQLi, XSS, IDOR, auth bypass</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_audit_pen_3" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_pentest"/>
+            <field name="user_id" ref="user_member2"/>
+            <field name="work_date">2026-01-25</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">60.00</field>
+            <field name="description">Internal network pen test + privilege escalation</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_audit_report_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_report"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-02-18</field>
+            <field name="hours">8.0</field>
+            <field name="cost_per_hour_snapshot">90.00</field>
+            <field name="description">Drafted executive summary and technical findings report</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_audit_report_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_audit_report"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-02-25</field>
+            <field name="hours">6.0</field>
+            <field name="cost_per_hour_snapshot">90.00</field>
+            <field name="description">Remediation roadmap prioritization + CISO presentation</field>
+            <field name="status">approved</field>
+        </record>
+
+        <!-- ══════════════════════════════════════════════════════════════
+             PROJECT 7: Legacy Portal Sunset
+             owner: manager2  |  status: cancelled
+        ══════════════════════════════════════════════════════════════ -->
+        <record id="project_legacy" model="bb.project">
+            <field name="name">Legacy Portal Sunset</field>
+            <field name="code">LPS-007</field>
+            <field name="owner_id" ref="user_sub_manager"/>
+            <field name="account_manager_id" ref="user_sub_manager"/>
+            <field name="customer_id" ref="customer_techviet"/>
+            <field name="status">cancelled</field>
+            <field name="priority">low</field>
+            <field name="start_date">2026-01-15</field>
+            <field name="end_date">2026-03-31</field>
+            <field name="budget">20000.00</field>
+            <field name="description">&lt;p&gt;Decommission the old customer portal and redirect traffic. Cancelled — customer decided to keep legacy system running for another year.&lt;/p&gt;</field>
+            <field name="tag_ids" eval="[(4, ref('tag_devops'))]"/>
+        </record>
+
+        <record id="member_legacy_mgr2" model="bb.project.member">
+            <field name="project_id" ref="project_legacy"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="role">PM</field>
+        </record>
+        <record id="member_legacy_m1" model="bb.project.member">
+            <field name="project_id" ref="project_legacy"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="role">DEV</field>
+        </record>
+
+        <record id="rate_legacy_mgr2" model="bb.project.member.rate">
+            <field name="member_id" ref="member_legacy_mgr2"/>
+            <field name="cost_per_hour">80.00</field>
+            <field name="effective_from">2026-01-15</field>
+        </record>
+        <record id="rate_legacy_m1" model="bb.project.member.rate">
+            <field name="member_id" ref="member_legacy_m1"/>
+            <field name="cost_per_hour">50.00</field>
+            <field name="effective_from">2026-01-15</field>
+        </record>
+
+        <!-- Cancelled milestone -->
+        <record id="milestone_legacy_m1" model="bb.project.milestone">
+            <field name="name">Traffic Redirect Plan</field>
+            <field name="project_id" ref="project_legacy"/>
+            <field name="due_date">2026-02-15</field>
+            <field name="status">cancelled</field>
+            <field name="description">301 redirect rules and DNS cutover plan — cancelled with project</field>
+        </record>
+
+        <record id="task_legacy_inventory" model="bb.project.task">
+            <field name="name">Portal Asset Inventory</field>
+            <field name="project_id" ref="project_legacy"/>
+            <field name="milestone_id" ref="milestone_legacy_m1"/>
+            <field name="assignee_id" ref="user_member1"/>
+            <field name="status">done</field>
+            <field name="priority">medium</field>
+            <field name="end_at">2026-01-30</field>
+            <field name="result">Documented 47 pages, 12 active user accounts, 3 integrations</field>
+            <field name="tag_ids" eval="[(4, ref('tag_devops'))]"/>
+        </record>
+        <record id="task_legacy_plan" model="bb.project.task">
+            <field name="name">Decommission &amp; Redirect Plan</field>
+            <field name="project_id" ref="project_legacy"/>
+            <field name="milestone_id" ref="milestone_legacy_m1"/>
+            <field name="assignee_id" ref="user_sub_manager"/>
+            <field name="status">in_progress</field>
+            <field name="priority">medium</field>
+            <field name="end_at">2026-02-20</field>
+            <field name="issues">Cancelled — customer reversed decision on 2026-02-12</field>
+            <field name="tag_ids" eval="[(4, ref('tag_devops'))]"/>
+        </record>
+
+        <!-- Small set of work logs (one approved before cancellation, one rejected) -->
+        <record id="bl_legacy_inv_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_legacy_inventory"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="work_date">2026-01-20</field>
+            <field name="hours">5.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">Page inventory and screenshot archive</field>
+            <field name="status">approved</field>
+        </record>
+        <record id="bl_legacy_inv_2" model="bb.project.backlog">
+            <field name="task_id" ref="task_legacy_inventory"/>
+            <field name="user_id" ref="user_member1"/>
+            <field name="work_date">2026-01-25</field>
+            <field name="hours">3.0</field>
+            <field name="cost_per_hour_snapshot">50.00</field>
+            <field name="description">User account audit (incorrect time entry — resubmit)</field>
+            <field name="status">rejected</field>
+        </record>
+        <record id="bl_legacy_plan_1" model="bb.project.backlog">
+            <field name="task_id" ref="task_legacy_plan"/>
+            <field name="user_id" ref="user_sub_manager"/>
+            <field name="work_date">2026-02-05</field>
+            <field name="hours">2.0</field>
+            <field name="cost_per_hour_snapshot">80.00</field>
+            <field name="description">Kick-off call + initial decommission checklist</field>
+            <field name="status">approved</field>
+        </record>
+
     </data>
 </odoo>
