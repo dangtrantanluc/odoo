@@ -32,7 +32,7 @@
 
     <!-- ═══════════════ Sub Menus ═══════════════ -->
     <menuitem id="menu_thuchi_dashboard"
-              name="Bảng điều khiển"
+              name="Dashboard"
               parent="menu_thuchi_root"
               action="action_thuchi_dashboard"
               sequence="5"/>
