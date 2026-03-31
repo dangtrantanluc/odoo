@@ -47,6 +47,7 @@
                                 <field name="overtime_hours" string="Làm thêm giờ" widget="float_time"/>
                             </group>
                         </group>
+                        <field name="attendance_code" string="Mã chấm công" readonly="1"/>
                         <separator string="Chi tiết vào ca"/>
                         <group colspan="2">
                             <group>
@@ -56,14 +57,10 @@
                                     <field name="in_browser" string="Trình duyệt" invisible="in_mode == 'manual'"/>
                                 </group>
                             </group>
-                            <group invisible="in_mode == 'manual'">
-                                <label for="in_country_name" string="Vị trí"/>
-                                <div class="o_row" name="in_location_info">
-                                    <span><field name="in_country_name"/></span>
-                                    <span><field name="in_city" invisible="in_city == 'Unknown'" nolabel="1"/></span>
-                                </div>
-                                <label for="in_latitude" string="Tọa độ GPS"/>
-                                <div>
+                            <group>
+                                <field name="checkin_address" string="Địa chỉ vào ca" invisible="not checkin_address" readonly="1"/>
+                                <label for="in_latitude" string="Tọa độ GPS" invisible="not in_latitude"/>
+                                <div invisible="not in_latitude">
                                     <div class="o_row">
                                         <span><field name="in_latitude"/></span>,
                                         <span><field name="in_longitude" nolabel="1"/></span>
@@ -83,14 +80,10 @@
                                     <field name="out_browser" string="Trình duyệt" invisible="in_mode == 'manual'"/>
                                 </group>
                             </group>
-                            <group invisible="out_mode == 'manual'">
-                                <label for="out_country_name" string="Vị trí"/>
-                                <div class="o_row" name="out_location_info">
-                                    <span><field name="out_country_name"/></span>
-                                    <span><field name="out_city" invisible="out_city == 'Unknown'" nolabel="1"/></span>
-                                </div>
-                                <label for="out_latitude" string="Tọa độ GPS"/>
-                                <div>
+                            <group>
+                                <field name="checkout_address" string="Địa chỉ ra ca" invisible="not checkout_address" readonly="1"/>
+                                <label for="out_latitude" string="Tọa độ GPS" invisible="not out_latitude"/>
+                                <div invisible="not out_latitude">
                                     <div class="o_row">
                                         <span><field name="out_latitude"/></span>,
                                         <span><field name="out_longitude" nolabel="1"/></span>
@@ -99,6 +92,15 @@
                                             class="btn btn-link ps-0 pt-0 pb-2"
                                             icon="oi-arrow-right" string="Xem bản đồ" colspan="2"/>
                                 </div>
+                            </group>
+                        </group>
+                        <!-- Ảnh chấm công (ngoài bán kính) -->
+                        <group colspan="2" invisible="not checkin_photo and not checkout_photo" string="Ảnh xác nhận chấm công">
+                            <group>
+                                <field name="checkin_photo" string="Ảnh vào ca" widget="image" invisible="not checkin_photo"/>
+                            </group>
+                            <group>
+                                <field name="checkout_photo" string="Ảnh ra ca" widget="image" invisible="not checkout_photo"/>
                             </group>
                         </group>
                     </group>

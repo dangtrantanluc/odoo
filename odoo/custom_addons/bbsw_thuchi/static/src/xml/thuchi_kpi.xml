@@ -136,6 +136,29 @@
                         </div>
                     </div>
 
+                    <!-- Dropdown Đơn vị kinh doanh -->
+                    <div class="bbsw-dropdown position-relative">
+                        <button class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                                t-on-click="() => toggleDropdown('showBuDD')">
+                            <i class="fa fa-building"/>
+                            <span t-esc="filterState.buLabel"/>
+                            <i class="fa fa-caret-down ms-1"/>
+                        </button>
+                        <div t-if="filterState.showBuDD"
+                             class="bbsw-dropdown-menu position-absolute bg-white border rounded shadow-sm py-1"
+                             style="z-index:1000;min-width:180px;top:100%;left:0;margin-top:2px">
+                            <div class="bbsw-dd-item px-3 py-1 text-muted" t-on-click="() => applyBuFilter('all','Tất cả BU')">Tất cả</div>
+                            <div style="height:1px;background:#dee2e6;margin:4px 0"/>
+                            <t t-foreach="buList" t-as="bu" t-key="bu.id">
+                                <div class="bbsw-dd-item px-3 py-1"
+                                     t-on-click="() => applyBuFilter(bu.id, bu.name)">
+                                    <i class="fa fa-circle me-1" style="font-size:8px;color:#6c757d"/>
+                                    <t t-esc="bu.name"/>
+                                </div>
+                            </t>
+                        </div>
+                    </div>
+
                 </div>
 
             </t>

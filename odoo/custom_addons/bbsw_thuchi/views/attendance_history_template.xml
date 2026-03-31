@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <template id="attendance_history_template" name="Lịch sử chấm công">
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+            <title>Lịch sử chấm công — BBSW</title>
+            <meta name="mobile-web-app-capable" content="yes"/>
+            <meta name="apple-mobile-web-app-capable" content="yes"/>
+            <meta name="theme-color" content="#16a34a"/>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"/>
+            <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"/>
+            <link t-att-rel="'stylesheet'" t-att-href="'/bbsw_thuchi/static/src/css/attendance_checkin.css'"/>
+            <style>
+                body { background: #f0fdf4; font-family: 'Inter', sans-serif; }
+                .ah-header {
+                    background: linear-gradient(135deg, #16a34a, #15803d);
+                    color: #fff;
+                    padding: 16px 20px;
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    position: sticky;
+                    top: 0;
+                    z-index: 100;
+                    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+                }
+                .ah-back { color: #fff; text-decoration: none; display: flex; align-items: center; }
+                .ah-title { font-size: 17px; font-weight: 700; flex: 1; }
+                .ah-month-nav {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    background: #fff;
+                    margin: 16px;
+                    border-radius: 14px;
+                    padding: 12px 16px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+                }
+                .ah-month-btn {
+                    background: #f0fdf4;
+                    border: 1px solid #bbf7d0;
+                    color: #16a34a;
+                    border-radius: 8px;
+                    padding: 6px 14px;
+                    font-weight: 600;
+                    font-size: 14px;
+                    text-decoration: none;
+                }
+                .ah-month-btn:hover { background: #dcfce7; color: #15803d; }
+                .ah-month-label { font-weight: 700; font-size: 15px; color: #166534; }
+                .ah-summary {
+                    display: flex;
+                    gap: 12px;
+                    margin: 0 16px 16px;
+                }
+                .ah-sum-card {
+                    flex: 1;
+                    background: #fff;
+                    border-radius: 14px;
+                    padding: 14px;
+                    text-align: center;
+                    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+                }
+                .ah-sum-val { font-size: 24px; font-weight: 800; color: #16a34a; }
+                .ah-sum-lbl { font-size: 12px; color: #6b7280; margin-top: 2px; }
+                .ah-list { margin: 0 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+                .ah-row {
+                    background: #fff;
+                    border-radius: 14px;
+                    padding: 14px 16px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                }
+                .ah-row.ah-open { border-left: 4px solid #f59e0b; }
+                .ah-date-block { text-align: center; min-width: 40px; }
+                .ah-day { font-size: 22px; font-weight: 800; color: #111827; line-height: 1; }
+                .ah-wd  { font-size: 11px; color: #6b7280; font-weight: 600; }
+                .ah-times { flex: 1; }
+                .ah-time-row { font-size: 13px; color: #374151; }
+                .ah-time-row span { color: #6b7280; margin-right: 4px; }
+                .ah-hours { text-align: right; }
+                .ah-h-val { font-size: 16px; font-weight: 700; color: #16a34a; }
+                .ah-h-lbl { font-size: 11px; color: #9ca3af; }
+                .ah-code-badge {
+                    display: inline-block;
+                    background: #dcfce7;
+                    color: #15803d;
+                    border-radius: 6px;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                    font-weight: 700;
+                    margin-top: 4px;
+                }
+                .ah-code-badge.code-p  { background:#fef9c3; color:#854d0e; }
+                .ah-code-badge.code-nl { background:#ffedd5; color:#9a3412; }
+                .ah-code-badge.code-kl { background:#fee2e2; color:#991b1b; }
+                .ah-code-badge.code-tv { background:#e0e7ff; color:#3730a3; }
+                .ah-empty {
+                    text-align: center;
+                    color: #9ca3af;
+                    padding: 40px 20px;
+                    font-size: 14px;
+                }
+            </style>
+        </head>
+        <body>
+
+        <!-- Header -->
+        <div class="ah-header">
+            <a href="/attendance/checkin" class="ah-back">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="20" height="20">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <span class="ah-title">Lịch sử chấm công</span>
+            <div style="width:36px;height:36px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,.5)">
+                <img t-attf-src="/web/image?model=res.users&amp;id={{ current_user.id }}&amp;field=avatar_128"
+                     style="width:100%;height:100%;object-fit:cover" alt=""/>
+            </div>
+        </div>
+
+        <!-- Month navigation -->
+        <div class="ah-month-nav">
+            <a t-attf-href="/attendance/history?month={{ prev_month }}" class="ah-month-btn">‹ Trước</a>
+            <span class="ah-month-label"><t t-esc="month_label"/></span>
+            <a t-attf-href="/attendance/history?month={{ next_month }}" class="ah-month-btn">Sau ›</a>
+        </div>
+
+        <!-- Summary -->
+        <div class="ah-summary">
+            <div class="ah-sum-card">
+                <div class="ah-sum-val"><t t-esc="total_days"/></div>
+                <div class="ah-sum-lbl">Ngày công</div>
+            </div>
+            <div class="ah-sum-card">
+                <div class="ah-sum-val"><t t-esc="total_hours"/></div>
+                <div class="ah-sum-lbl">Tổng giờ</div>
+            </div>
+        </div>
+
+        <!-- Records -->
+        <div class="ah-list">
+            <t t-if="records">
+                <t t-foreach="records" t-as="r">
+                    <div t-attf-class="ah-row {{ 'ah-open' if r['open'] else '' }}">
+                        <div class="ah-date-block">
+                            <div class="ah-day"><t t-esc="r['date'].split('/')[0]"/></div>
+                            <div class="ah-wd"><t t-esc="r['weekday']"/></div>
+                        </div>
+                        <div class="ah-times">
+                            <div class="ah-time-row">
+                                <span>Vào:</span><t t-esc="r['check_in']"/>
+                                <span style="margin-left:10px">Ra:</span><t t-esc="r['check_out']"/>
+                            </div>
+                            <t t-set="code_cls" t-value="'code-' + r['code'].lower() if r['code'].lower() in ('p','nl','kl','tv') else ''"/>
+                            <span t-attf-class="ah-code-badge {{ code_cls }}"><t t-esc="r['code']"/></span>
+                        </div>
+                        <div class="ah-hours">
+                            <t t-if="r['open']">
+                                <div class="ah-h-val" style="color:#f59e0b">...</div>
+                                <div class="ah-h-lbl">đang làm</div>
+                            </t>
+                            <t t-else="">
+                                <div class="ah-h-val"><t t-esc="r['worked_hours']"/></div>
+                                <div class="ah-h-lbl">giờ</div>
+                            </t>
+                        </div>
+                    </div>
+                </t>
+            </t>
+            <t t-else="">
+                <div class="ah-empty">Chưa có dữ liệu chấm công tháng này</div>
+            </t>
+        </div>
+
+        </body>
+        </html>
+    </template>
+
+</odoo>

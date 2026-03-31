@@ -1,6 +1,13 @@
 from odoo import models, fields, api
 from odoo.exceptions import ValidationError
 
+_TYPE_PREFIX = {
+    'thu': 'T',
+    'chi': 'C',
+    'vay': 'V',
+    'hoan_ung': 'H',
+}
+
 
 class ThuChiRecord(models.Model):
     _name = 'bbsw.thuchi.record'
@@ -38,20 +45,6 @@ class ThuChiRecord(models.Model):
         tracking=True,
     )
     amount = fields.Float(string='Số tiền', required=True, tracking=True)
-
-    signed_amount = fields.Float(
-        string='Số tiền (ròng)',
-        compute='_compute_signed_amount',
-        store=True,
-    )
-
-    @api.depends('amount', 'type')
-    def _compute_signed_amount(self):
-        for rec in self:
-            if rec.type == 'thu':
-                rec.signed_amount = rec.amount
-            else:
-                rec.signed_amount = -rec.amount
 
     # ── Đơn vị & Dự án ──
     business_unit_id = fields.Many2one(
@@ -156,12 +149,60 @@ class ThuChiRecord(models.Model):
             },
         }
 
-    # ── Sequence ──
+    # ── Sinh mã giao dịch: {BU}_{TypePrefix}{MM}{YY}_{seq:03d} ──
+    def _generate_transaction_code(self, rec_type, date, bu_code):
+        """
+        Sinh mã theo format: {BU_CODE}_{TypePrefix}{MM}{YY}_{seq:03d}
+        Running number reset theo (bu_code + TypePrefix + MMYY).
+        Dùng SELECT FOR UPDATE để tránh race condition.
+        """
+        prefix_char = _TYPE_PREFIX.get(rec_type, 'X')
+        mmyy = date.strftime('%m%y')              # VD: 0326
+        bu_part = (bu_code or 'GEN').upper()
+        pattern = f"{bu_part}_{prefix_char}{mmyy}_"
+
+        # Lock tất cả record cùng pattern để tránh concurrency
+        self.env.cr.execute(
+            """
+            SELECT transaction_code FROM bbsw_thuchi_record
+            WHERE transaction_code LIKE %s
+            ORDER BY transaction_code DESC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+            """,
+            (pattern + '%',),
+        )
+        row = self.env.cr.fetchone()
+        if row:
+            try:
+                last_seq = int(row[0].rsplit('_', 1)[-1])
+            except (ValueError, IndexError):
+                last_seq = 0
+        else:
+            last_seq = 0
+
+        new_seq = last_seq + 1
+        return f"{pattern}{new_seq:03d}"
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
             if vals.get('transaction_code', 'New') == 'New':
-                vals['transaction_code'] = self.env['ir.sequence'].next_by_code('bbsw.thuchi.record') or 'New'
+                rec_type = vals.get('type', 'chi')
+                # date có thể là string hoặc date object
+                date_val = vals.get('date') or fields.Date.context_today(self)
+                if isinstance(date_val, str):
+                    from datetime import date as _date
+                    date_val = _date.fromisoformat(date_val)
+                # Lấy BU code
+                bu_code = ''
+                bu_id = vals.get('business_unit_id')
+                if bu_id:
+                    bu = self.env['bbsw.business.unit'].browse(bu_id)
+                    bu_code = bu.code or ''
+                vals['transaction_code'] = self._generate_transaction_code(
+                    rec_type, date_val, bu_code
+                )
         return super().create(vals_list)
 
     # ── Domain filter: category type matches record type ──

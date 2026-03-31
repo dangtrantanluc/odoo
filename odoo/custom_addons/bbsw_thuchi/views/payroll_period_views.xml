@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ Tree View ═══════════════ -->
+    <record id="view_bbsw_payroll_period_tree" model="ir.ui.view">
+        <field name="name">bbsw.payroll.period.tree</field>
+        <field name="model">bbsw.payroll.period</field>
+        <field name="arch" type="xml">
+            <tree string="Kỳ lương"
+                  decoration-success="state == 'paid'"
+                  decoration-info="state == 'confirmed'"
+                  decoration-warning="state == 'locked'"
+                  decoration-muted="state == 'draft'">
+                <field name="name" string="Kỳ lương"/>
+                <field name="date_from" string="Từ ngày"/>
+                <field name="date_to" string="Đến ngày"/>
+                <field name="payroll_count" string="Số NV"/>
+                <field name="total_net" string="Tổng thực nhận" widget="monetary"
+                       options="{'currency_field': 'vnd_currency_id'}"/>
+                <field name="total_company_cost" string="Tổng CP DN" widget="monetary"
+                       options="{'currency_field': 'vnd_currency_id'}"/>
+                <field name="state" string="Trạng thái"
+                       decoration-success="state == 'paid'"
+                       decoration-info="state == 'confirmed'"
+                       decoration-warning="state == 'locked'"
+                       widget="badge"/>
+                <field name="vnd_currency_id" column_invisible="1"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Form View ═══════════════ -->
+    <record id="view_bbsw_payroll_period_form" model="ir.ui.view">
+        <field name="name">bbsw.payroll.period.form</field>
+        <field name="model">bbsw.payroll.period</field>
+        <field name="arch" type="xml">
+            <form string="Kỳ lương">
+                <header>
+                    <button name="action_lock_attendance"
+                            type="object"
+                            string="🔒 Chốt công"
+                            class="btn-primary"
+                            invisible="state != 'draft'"
+                            confirm="Sau khi chốt công, dữ liệu ngày công sẽ bị đóng băng. Bạn có chắc chắn?"/>
+                    <button name="action_confirm"
+                            type="object"
+                            string="✅ Xác nhận kỳ lương"
+                            class="btn-primary"
+                            invisible="state != 'locked'"/>
+                    <button name="action_pay"
+                            type="object"
+                            string="💰 Đánh dấu đã thanh toán"
+                            class="btn-primary"
+                            invisible="state != 'confirmed'"/>
+                    <button name="action_reset_draft"
+                            type="object"
+                            string="↩ Hoàn tác về Nháp"
+                            invisible="state == 'draft' or state == 'paid'"
+                            confirm="Hoàn tác sẽ mở khóa tất cả phiếu lương. Tiếp tục?"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,locked,confirmed,paid"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" type="object"
+                                name="action_view_payrolls" icon="fa-file-text-o"
+                                invisible="payroll_count == 0">
+                            <field name="payroll_count" widget="statinfo" string="Phiếu lương"/>
+                        </button>
+                    </div>
+                    <group>
+                        <group string="Thông tin kỳ lương">
+                            <field name="period_month" string="Tháng"/>
+                            <field name="period_year" string="Năm"/>
+                            <field name="date_from" string="Từ ngày" readonly="1"/>
+                            <field name="date_to" string="Đến ngày" readonly="1"/>
+                        </group>
+                        <group string="Tổng kết" invisible="state == 'draft'">
+                            <field name="total_net" string="Tổng thực nhận" widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="total_company_cost" string="Tổng CP doanh nghiệp"
+                                   widget="monetary"
+                                   options="{'currency_field': 'vnd_currency_id'}"/>
+                            <field name="vnd_currency_id" invisible="1"/>
+                        </group>
+                    </group>
+
+                    <!-- Cảnh báo trạng thái -->
+                    <div class="alert alert-warning" role="alert"
+                         invisible="state != 'draft'">
+                        <strong>⚠ Chưa chốt công.</strong>
+                        Nhấn <em>Chốt công</em> để tự động tổng hợp dữ liệu chấm công
+                        và tạo phiếu lương cho tất cả nhân viên.
+                    </div>
+                    <div class="alert alert-info" role="alert"
+                         invisible="state != 'locked'">
+                        <strong>🔒 Đã chốt công.</strong>
+                        Dữ liệu ngày công đã được đóng băng. Kiểm tra và điều chỉnh
+                        thưởng/tạm ứng nếu cần, sau đó <em>Xác nhận kỳ lương</em>.
+                    </div>
+                    <div class="alert alert-success" role="alert"
+                         invisible="state != 'confirmed'">
+                        <strong>✅ Đã xác nhận.</strong>
+                        Kỳ lương đã được duyệt. Tiến hành thanh toán cho nhân viên.
+                    </div>
+
+                    <field name="note" string="Ghi chú" placeholder="Ghi chú..."/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Action ═══════════════ -->
+    <record id="action_bbsw_payroll_period" model="ir.actions.act_window">
+        <field name="name">Kỳ lương</field>
+        <field name="res_model">bbsw.payroll.period</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <!-- ═══════════════ Menu ═══════════════ -->
+    <menuitem id="menu_payroll_period"
+              name="Kỳ lương"
+              parent="bbsw_thuchi.menu_tinhluong_root"
+              action="action_bbsw_payroll_period"
+              sequence="1"/>
+
+</odoo>

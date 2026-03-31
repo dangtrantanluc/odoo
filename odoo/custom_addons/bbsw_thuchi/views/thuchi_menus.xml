@@ -80,9 +80,16 @@
               action="action_business_unit"
               sequence="30"/>
 
+    <!-- Client action: trang Cài đặt tuỳ chỉnh -->
+    <record id="action_thuchi_settings_client" model="ir.actions.client">
+        <field name="name">Cài đặt</field>
+        <field name="tag">bbsw_thuchi_settings_action</field>
+    </record>
+
     <menuitem id="menu_thuchi_config"
-              name="Cấu hình"
+              name="Cài đặt"
               parent="menu_thuchi_root"
+              action="action_thuchi_settings_client"
               sequence="90"/>
 
     <menuitem id="menu_thuchi_category"

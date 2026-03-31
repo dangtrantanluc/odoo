@@ -19,7 +19,6 @@
                 <field name="employee_id" optional="show"/>
                 <field name="payment_method_id" optional="show"/>
                 <field name="amount"/>
-                <field name="signed_amount" string="Số dư (ròng)" sum="Số dư ròng" optional="show"/>
                 <field name="payment_status" widget="badge"
                        decoration-success="payment_status == 'paid'"
                        decoration-warning="payment_status == 'unpaid'"/>
@@ -135,9 +134,11 @@
         <field name="model">bbsw.thuchi.record</field>
         <field name="arch" type="xml">
             <search string="Tìm kiếm Thu Chi">
-                <field name="transaction_code"/>
-                <field name="name"/>
+                <!-- Thanh tìm kiếm -->
+                <field name="transaction_code" string="Mã giao dịch"/>
+                <field name="name" string="Mô tả"/>
                 <field name="category_id"/>
+                <field name="business_unit_id" string="Đơn vị kinh doanh"/>
                 <field name="project_id"/>
                 <field name="partner_id"/>
                 <field name="employee_id"/>
@@ -146,6 +147,14 @@
                 <filter name="filter_chi" string="Chi" domain="[('type', '=', 'chi')]"/>
                 <filter name="filter_vay" string="Vay" domain="[('type', '=', 'vay')]"/>
                 <filter name="filter_hoan_ung" string="Hoàn ứng" domain="[('type', '=', 'hoan_ung')]"/>
+                <separator/>
+                <!-- Đơn vị kinh doanh -->
+                <filter name="filter_bu_bbsw" string="BlueBolt Software"
+                        domain="[('business_unit_id.code', '=', 'BBSW')]"/>
+                <filter name="filter_bu_bbac" string="BlueBolt Academy"
+                        domain="[('business_unit_id.code', '=', 'BBAC')]"/>
+                <filter name="filter_bu_bbsv" string="BlueBolt Services"
+                        domain="[('business_unit_id.code', '=', 'BBSV')]"/>
                 <separator/>
                 <!-- Trạng thái duyệt -->
                 <filter name="filter_approved" string="Đã duyệt" domain="[('state', '=', 'approved')]"/>
@@ -177,7 +186,6 @@
             <pivot string="Bảng điều khiển Thu Chi" disable_linking="0">
                 <field name="type" type="row"/>
                 <field name="date" type="col" interval="month"/>
-                <field name="signed_amount" type="measure" string="Số tiền (ròng)"/>
                 <field name="amount" type="measure" string="Số tiền"/>
             </pivot>
         </field>

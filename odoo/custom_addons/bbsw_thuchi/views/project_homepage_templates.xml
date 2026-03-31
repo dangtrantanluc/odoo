@@ -130,8 +130,32 @@
             </main>
 
         </div>
+        <!-- Toast thông báo không có quyền -->
+        <div id="hpToastWrap" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:none;min-width:280px;max-width:90vw">
+            <div style="background:#1e293b;color:#fff;border-radius:12px;padding:14px 20px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.25)">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#f87171" width="22" height="22" style="flex-shrink:0">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                </svg>
+                <span style="font-size:14px;font-weight:500">Bạn không có quyền truy cập trang này.</span>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
         <script t-att-src="'/bbsw_thuchi/static/src/js/thuchi_homepage.js'"></script>
+        <t t-if="show_no_access">
+        <script>
+            (function() {
+                var el = document.getElementById('hpToastWrap');
+                if (!el) return;
+                el.style.display = 'block';
+                setTimeout(function() {
+                    el.style.transition = 'opacity 0.5s';
+                    el.style.opacity = '0';
+                    setTimeout(function() { el.style.display = 'none'; }, 500);
+                }, 3500);
+            })();
+        </script>
+        </t>
         </body>
         </html>
     </template>

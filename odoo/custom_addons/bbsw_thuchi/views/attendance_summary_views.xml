@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════ Wizard Form ═══════════════ -->
+    <record id="view_attendance_summary_wizard_form" model="ir.ui.view">
+        <field name="name">bbsw.attendance.summary.wizard.form</field>
+        <field name="model">bbsw.attendance.summary.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Tổng hợp chấm công tháng">
+                <sheet>
+                    <div class="oe_title">
+                        <h2>📊 Tổng hợp chấm công</h2>
+                    </div>
+                    <group>
+                        <group string="Kỳ báo cáo">
+                            <field name="period_month" string="Tháng"/>
+                            <field name="period_year" string="Năm"/>
+                            <field name="use_payroll_period" string="Theo kỳ lương (26→27)"/>
+                        </group>
+                        <group string="Lọc theo">
+                            <field name="department_id" string="Phòng ban"
+                                   placeholder="Tất cả phòng ban..."/>
+                        </group>
+                    </group>
+                    <div class="alert alert-info" role="alert">
+                        <strong>Hướng dẫn:</strong><br/>
+                        • <b>Xuất Excel</b>: Tạo file bảng chấm công dạng ma trận (nhân viên × ngày) để kế toán xem xét.<br/>
+                        • <b>Xem tổng hợp</b>: Hiển thị bảng tổng hợp ngày công từng nhân viên trong kỳ (X, P, NL, KL...).
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_export_excel"
+                            type="object"
+                            string="📥 Xuất Excel"
+                            class="btn-primary"/>
+                    <button name="action_view_summary"
+                            type="object"
+                            string="📊 Xem tổng hợp"
+                            class="btn-secondary"/>
+                    <button string="Đóng" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Summary Line Tree ═══════════════ -->
+    <record id="view_attendance_summary_line_tree" model="ir.ui.view">
+        <field name="name">bbsw.attendance.summary.line.tree</field>
+        <field name="model">bbsw.attendance.summary.line</field>
+        <field name="arch" type="xml">
+            <tree string="Tổng hợp chấm công" create="false" delete="false"
+                  decoration-danger="days_missing &gt; 0"
+                  decoration-muted="checkin_count == 0">
+                <field name="employee_name" string="Họ tên"/>
+                <field name="employee_code" string="Mã NV" optional="show"/>
+                <field name="department_name" string="Phòng ban" optional="show"/>
+                <field name="period_label" string="Kỳ" optional="show"/>
+                <field name="days_x" string="Ngày X"
+                       decoration-success="days_x &gt; 0"/>
+                <field name="days_p" string="Ngày P"
+                       decoration-warning="days_p &gt; 0"/>
+                <field name="days_nl" string="Ngày NL"
+                       decoration-info="days_nl &gt; 0"/>
+                <field name="days_kl" string="Ngày KL"
+                       decoration-danger="days_kl &gt; 0"/>
+                <field name="days_tv" string="Ngày TV" optional="hide"/>
+                <field name="total_hours" string="Tổng giờ" optional="show"/>
+                <field name="checkin_count" string="Lần chấm" optional="show"/>
+                <field name="days_missing" string="Thiếu dữ liệu"
+                       decoration-danger="days_missing &gt; 0" optional="show"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Day Line Tree (inline) ═══════════════ -->
+    <record id="view_attendance_day_line_tree" model="ir.ui.view">
+        <field name="name">bbsw.attendance.day.line.tree</field>
+        <field name="model">bbsw.attendance.day.line</field>
+        <field name="arch" type="xml">
+            <tree string="Chi tiết chấm công" editable="bottom"
+                  decoration-muted="is_weekend"
+                  decoration-danger="not is_weekend and not attendance_code"
+                  decoration-success="attendance_code == 'X'"
+                  decoration-warning="attendance_code == 'P'">
+                <field name="date" string="Ngày" readonly="1"/>
+                <field name="weekday_label" string="Thứ" readonly="1"/>
+                <field name="attendance_code" string="Mã CC"
+                       readonly="is_weekend"/>
+                <field name="check_in_time" string="Giờ vào" readonly="1"/>
+                <field name="check_out_time" string="Giờ ra" readonly="1"/>
+                <field name="worked_hours" string="Số giờ" readonly="1"/>
+                <field name="note" string="Ghi chú" optional="show"/>
+                <field name="is_weekend" column_invisible="1"/>
+                <field name="attendance_id" column_invisible="1"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Summary Line Form ═══════════════ -->
+    <record id="view_attendance_summary_line_form" model="ir.ui.view">
+        <field name="name">bbsw.attendance.summary.line.form</field>
+        <field name="model">bbsw.attendance.summary.line</field>
+        <field name="arch" type="xml">
+            <form string="Chi tiết chấm công nhân viên" create="false" delete="false">
+                <header>
+                    <button name="action_save_attendance_codes"
+                            type="object"
+                            string="💾 Lưu thay đổi mã chấm công"
+                            class="btn-primary"
+                            confirm="Xác nhận lưu các thay đổi mã chấm công về hệ thống?"/>
+                    <button string="← Quay lại danh sách"
+                            type="object"
+                            name="action_back_to_list"
+                            class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h2>
+                            <field name="employee_name" readonly="1"/>
+                        </h2>
+                        <h4>
+                            <field name="department_name" readonly="1"/> —
+                            Mã: <field name="employee_code" readonly="1"/> |
+                            Kỳ: <field name="period_label" readonly="1"/>
+                        </h4>
+                    </div>
+                    <group>
+                        <group string="Tổng hợp kỳ lương">
+                            <field name="days_x" string="Ngày X (Công chính thức)" readonly="1"/>
+                            <field name="days_p" string="Ngày P (Nghỉ phép)" readonly="1"/>
+                            <field name="days_nl" string="Ngày NL (Nghỉ lễ)" readonly="1"/>
+                            <field name="days_kl" string="Ngày KL (Không lương)" readonly="1"/>
+                        </group>
+                        <group string="Thống kê">
+                            <field name="total_hours" string="Tổng giờ làm" readonly="1"/>
+                            <field name="checkin_count" string="Số lần chấm" readonly="1"/>
+                            <field name="days_missing" string="Ngày thiếu dữ liệu" readonly="1"/>
+                        </group>
+                    </group>
+                    <separator string="Chi tiết từng ngày"/>
+                    <div class="alert alert-info mb-2" role="alert">
+                        <strong>Mã chấm công:</strong>
+                        X = Ngày công | P = Nghỉ phép | NL = Nghỉ lễ | KL = Không lương | TV = Thử việc
+                    </div>
+                    <field name="day_ids" nolabel="1">
+                        <tree editable="bottom"
+                              decoration-muted="is_weekend"
+                              decoration-danger="not is_weekend and not attendance_code"
+                              decoration-success="attendance_code == 'X'"
+                              decoration-warning="attendance_code == 'P'">
+                            <field name="date" string="Ngày" readonly="1"/>
+                            <field name="weekday_label" string="Thứ" readonly="1"/>
+                            <field name="attendance_code" string="Mã CC"
+                                   readonly="is_weekend"/>
+                            <field name="check_in_time" string="Giờ vào" readonly="1"/>
+                            <field name="check_out_time" string="Giờ ra" readonly="1"/>
+                            <field name="worked_hours" string="Số giờ" readonly="1"/>
+                            <field name="note" string="Ghi chú" optional="show"/>
+                            <field name="is_weekend" column_invisible="1"/>
+                            <field name="attendance_id" column_invisible="1"/>
+                        </tree>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ═══════════════ Action ═══════════════ -->
+    <record id="action_attendance_summary_wizard" model="ir.actions.act_window">
+        <field name="name">Tổng hợp chấm công tháng</field>
+        <field name="res_model">bbsw.attendance.summary.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ═══════════════ Menu ═══════════════ -->
+    <menuitem id="menu_attendance_summary"
+              name="Tổng hợp tháng"
+              parent="bbsw_thuchi.menu_chamcong_root"
+              action="action_attendance_summary_wizard"
+              sequence="5"/>
+
+</odoo>

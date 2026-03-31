@@ -27,6 +27,7 @@
                        decoration-success="state == 'paid'"
                        decoration-info="state == 'confirmed'"
                        decoration-muted="state == 'draft'"/>
+                <field name="is_locked" string="Chốt" widget="boolean_toggle" optional="show" readonly="1"/>
                 <field name="vnd_currency_id" column_invisible="1"/>
             </tree>
         </field>
@@ -39,6 +40,8 @@
         <field name="arch" type="xml">
             <form string="Phiếu lương">
                 <header>
+                    <widget name="web_ribbon" title="Đã chốt công" bg_color="bg-warning"
+                            invisible="not is_locked"/>
                     <button name="action_preview_payslip" string="In phiếu lương" type="object"
                             class="btn-secondary" icon="fa-print"/>
                     <button name="action_recompute_days" string="↻ Tính lại ngày công" type="object"
@@ -66,6 +69,9 @@
                             <field name="contract_type" readonly="1"/>
                         </group>
                         <group string="Kỳ lương">
+                            <field name="period_id" string="Kỳ lương" readonly="1"/>
+                            <field name="is_locked" invisible="1"/>
+                            <field name="lock_date" string="Thời gian chốt" readonly="1" invisible="not is_locked"/>
                             <field name="period_month" readonly="state != 'draft'"/>
                             <field name="period_year" readonly="state != 'draft'"/>
                             <field name="standard_days" readonly="state != 'draft'"/>
@@ -77,16 +83,16 @@
                         <group string="Ngày công">
                             <field name="daily_rate" string="L3 - Đơn giá/ngày" widget="monetary"
                                    options="{'currency_field': 'vnd_currency_id'}"/>
-                            <field name="worked_days" string="L4 - Ngày công thực tế (X)"/>
+                            <field name="worked_days" string="L4 - Ngày công thực tế (X)" readonly="is_locked"/>
                             <field name="time_salary" string="L5 - Lương thời gian" widget="monetary"
                                    options="{'currency_field': 'vnd_currency_id'}"/>
-                            <field name="trial_days" string="L6 - Ngày thử việc (TV)"/>
+                            <field name="trial_days" string="L6 - Ngày thử việc (TV)" readonly="is_locked"/>
                             <field name="trial_salary" string="L7 - Lương thử việc" widget="monetary"
                                    options="{'currency_field': 'vnd_currency_id'}"/>
-                            <field name="leave_days" string="L8 - Ngày phép/lễ/chính đáng (P,NL,BH,CĐ,CT)"/>
+                            <field name="leave_days" string="L8 - Ngày phép/lễ/chính đáng (P,NL,BH,CĐ,CT)" readonly="is_locked"/>
                             <field name="leave_salary" string="L9 - Lương phép/lễ/chính đáng" widget="monetary"
                                    options="{'currency_field': 'vnd_currency_id'}"/>
-                            <field name="compensatory_days" string="L10 - Ngày nghỉ bù hưởng lương (NB)"/>
+                            <field name="compensatory_days" string="L10 - Ngày nghỉ bù hưởng lương (NB)" readonly="is_locked"/>
                             <field name="compensatory_salary" string="L11 - Lương nghỉ bù" widget="monetary"
                                    options="{'currency_field': 'vnd_currency_id'}"/>
                         </group>
@@ -244,6 +250,7 @@
               parent="menu_tinhluong_root"
               action="action_bbsw_payroll"
               sequence="1"/>
+
 
     <menuitem id="menu_tinhluong_report"
               name="Báo cáo"
