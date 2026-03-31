@@ -7,6 +7,7 @@ class HomeApp(models.Model):
     _order = 'sequence, id'
 
     name = fields.Char(string='Tên ứng dụng', required=True, translate=True)
+    description = fields.Char(string='Mô tả ngắn', translate=True)
     url = fields.Char(string='Đường dẫn URL', required=True)
     icon = fields.Selection([
         ('money', 'Tài chính / Thu Chi'),
