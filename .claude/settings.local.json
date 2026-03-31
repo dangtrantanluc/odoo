@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(ls /home/bbsw/odoo/redesign 2>/dev/null && cat /home/bbsw/odoo/redesign/* 2>/dev/null || echo \"no redesign dir\")",
-      "Bash(docker compose:*)"
-    ]
-  }
-}
