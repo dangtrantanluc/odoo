@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <!-- ═══════════════ BlueBolt Homepage App ═══════════════ -->
+    <record id="action_bluebolt_home" model="ir.actions.act_url">
+        <field name="name">BlueBolt</field>
+        <field name="url">/project/home</field>
+        <field name="target">self</field>
+    </record>
+
+    <menuitem id="menu_bluebolt_root"
+              name="BlueBolt"
+              sequence="1"
+              action="action_bluebolt_home"
+              web_icon="bbsw_thuchi,static/description/icon.png"/>
+
+    <!-- Ẩn Discuss -->
+    <menuitem id="mail.menu_root_discuss" active="False"/>
+
     <!-- ═══════════════ Root Menu ═══════════════ -->
     <menuitem id="menu_thuchi_root"
               name="Thu Chi"
