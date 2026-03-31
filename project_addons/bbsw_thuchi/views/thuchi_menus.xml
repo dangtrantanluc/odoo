@@ -14,11 +14,11 @@
               action="action_bluebolt_home"
               web_icon="bbsw_thuchi,static/description/icon.png"/>
 
-    <!-- Thảo luận (Discuss) - bật lại với tên tiếng Việt -->
-    <menuitem id="mail.menu_root_discuss"
+    <!-- Thảo luận -->
+    <menuitem id="menu_thaoluan_root"
               name="Thảo luận"
               sequence="2"
-              active="True"
+              action="mail.action_discuss"
               web_icon="mail,static/description/icon.png"/>
 
     <!-- Ẩn Discuss gốc -->
