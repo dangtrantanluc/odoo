@@ -5,6 +5,13 @@ class HrAttendanceExtend(models.Model):
     _inherit = 'hr.attendance'
 
     attendance_code = fields.Char(string='Mã chấm công', readonly=True)
+    # Địa chỉ reverse-geocode (tên đường/khu vực) từ GPS mobile
+    checkin_address = fields.Char(string='Địa chỉ vào ca')
+    checkout_address = fields.Char(string='Địa chỉ ra ca')
+    checkin_photo = fields.Binary(string='Ảnh vào ca', attachment=True)
+    checkout_photo = fields.Binary(string='Ảnh ra ca', attachment=True)
+    checkin_photo_filename = fields.Char(string='Tên file ảnh vào ca')
+    checkout_photo_filename = fields.Char(string='Tên file ảnh ra ca')
 
 
 class HrEmployeeExtend(models.Model):

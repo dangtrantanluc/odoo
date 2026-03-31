@@ -218,6 +218,14 @@ class BbswPayroll(models.Model):
         ('paid', 'Đã thanh toán'),
     ], string='Trạng thái', default='draft')
 
+    period_id = fields.Many2one(
+        'bbsw.payroll.period', string='Kỳ lương',
+        ondelete='restrict', index=True)
+    is_locked = fields.Boolean(
+        string='Đã chốt công', default=False,
+        help='Khi chốt công, dữ liệu ngày công bị đóng băng và không tự tính lại từ chấm công.')
+    lock_date = fields.Datetime(string='Thời gian chốt', readonly=True)
+
     _sql_constraints = [
         ('unique_employee_period', 'unique(employee_id, period_month, period_year)',
          'Nhân viên này đã có phiếu lương cho tháng/năm này!'),
@@ -272,9 +280,12 @@ class BbswPayroll(models.Model):
     _COMPENSATORY_CODES = {'NB'}
     # Mã chính thức: X, X/KL và mọi mã không thuộc nhóm trên
 
-    @api.depends('employee_id', 'period_month', 'period_year')
+    @api.depends('employee_id', 'period_month', 'period_year', 'is_locked')
     def _compute_worked_days(self):
         for rec in self:
+            if rec.is_locked:
+                # Dữ liệu đã chốt - giữ nguyên giá trị đóng băng
+                continue
             if not rec.employee_id or not rec.period_month or not rec.period_year:
                 rec.worked_days = 0.0
                 rec.trial_days = 0.0
@@ -391,8 +402,50 @@ class BbswPayroll(models.Model):
                               - rec.company_hold)
             rec.company_cost = rec.total_gross + rec.total_insurance_company
 
+    def _snapshot_attendance(self):
+        """Đọc dữ liệu chấm công thực tế và đóng băng vào phiếu lương."""
+        for rec in self:
+            if not rec.employee_id or not rec.period_month or not rec.period_year:
+                continue
+            start, end = rec._period_date_range(rec.period_year, rec.period_month)
+            domain = [
+                ('employee_id', '=', rec.employee_id.id),
+                ('check_in', '>=', start),
+                ('check_in', '<', end),
+                ('check_out', '!=', False),
+            ]
+            attendances = self.env['hr.attendance'].search(domain)
+
+            official_h = trial_h = leave_h = comp_h = 0.0
+            for att in attendances:
+                code = (att.attendance_code or '').upper().strip()
+                h = att.worked_hours or 0.0
+                if code in rec._TRIAL_CODES:
+                    trial_h += h
+                elif code in rec._LEAVE_CODES:
+                    leave_h += h
+                elif code in rec._COMPENSATORY_CODES:
+                    comp_h += h
+                else:
+                    official_h += h
+
+            rec.write({
+                'worked_days': round(official_h / 9.0, 2),
+                'trial_days': round(trial_h / 9.0, 2),
+                'leave_days': round(leave_h / 9.0, 2),
+                'compensatory_days': round(comp_h / 9.0, 2),
+                'is_locked': True,
+                'lock_date': fields.Datetime.now(),
+            })
+
     def action_recompute_days(self):
-        """Tính lại ngày công từ dữ liệu chấm công và cập nhật lại tất cả tính toán."""
+        """Tính lại ngày công từ dữ liệu chấm công (chỉ khi chưa chốt)."""
+        locked = self.filtered('is_locked')
+        if locked:
+            raise UserError(
+                f'Không thể tính lại: {len(locked)} phiếu đã chốt công. '
+                f'Vui lòng hoàn tác kỳ lương trước.'
+            )
         self._compute_worked_days()
         self._compute_salary()
         self._compute_insurance()

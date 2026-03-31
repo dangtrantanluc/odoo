@@ -59,6 +59,8 @@
                             <field name="contract_end_date"/>
                         </group>
                         <group string="Lương &amp; Liên hệ">
+                            <field name="user_id" string="Tài khoản đăng nhập"
+                                   help="Liên kết tài khoản Odoo để nhân viên có thể đăng nhập và chấm công"/>
                             <field name="actual_salary"/>
                             <field name="work_phone" string="Điện thoại công việc"/>
                             <field name="work_email" string="Email công việc"/>

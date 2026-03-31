@@ -189,6 +189,10 @@ CREATE TABLE public._prisma_migrations (
     migration_name character varying(255) NOT NULL,
     logs text,
     rolled_back_at timestamp with time zone,
+
+
+
+
     started_at timestamp with time zone DEFAULT now() NOT NULL,
     applied_steps_count integer DEFAULT 0 NOT NULL
 );
