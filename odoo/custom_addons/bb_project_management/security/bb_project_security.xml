@@ -12,7 +12,6 @@
         <record id="group_bb_pm_manager" model="res.groups">
             <field name="name">BB PM / Project Manager</field>
             <field name="category_id" ref="base.module_category_project"/>
-            <field name="implied_ids" eval="[(4, ref('group_bb_pm_admin'))]"/>
             <field name="comment">Can create/edit/archive projects, tasks and manage team members.</field>
         </record>
 

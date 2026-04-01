@@ -1,6 +1,6 @@
 {
     'name': 'BBSW Thu Chi',
-    'version': '17.0.3.0.0',
+    'version': '17.0.4.0.0',
     'summary': 'Trang chủ & Quản lý Thu Chi',
     'description': """
         Module BBSW bao gồm:
@@ -12,7 +12,7 @@
     """,
     'author': 'BBSW',
     'category': 'Accounting',
-    'depends': ['base', 'mail', 'hr', 'hr_attendance'],
+    'depends': ['base', 'mail', 'hr', 'hr_attendance', 'bb_project_management'],
     'data': [
         'security/ir.model.access.csv',
         'security/record_rules.xml',
@@ -64,5 +64,6 @@
     'installable': True,
     'application': True,
     'auto_install': False,
+    'post_init_hook': 'post_init_hook',
     'license': 'LGPL-3',
 }

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'BB Project Management',
-    'version': '17.0.1.0.0',
+    'version': '17.0.1.1.0',
     'category': 'Project',
     'summary': 'End-to-end project management for BlueBolt',
     'description': """
@@ -32,6 +32,8 @@
         'views/bb_project_views.xml',
         'views/bb_project_menus.xml',
         'views/hide_menus.xml',
+    ],
+    'demo': [
         'data/bb_project_demo.xml',
     ],
     'assets': {

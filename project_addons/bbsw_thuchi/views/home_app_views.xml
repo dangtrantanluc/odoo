@@ -5,10 +5,14 @@
         <field name="name">bbsw.home.app.list</field>
         <field name="model">bbsw.home.app</field>
         <field name="arch" type="xml">
-            <tree string="Ứng dụng trang chủ" editable="bottom">
+            <tree string="Ứng dụng trang chủ" editable="bottom" decoration-danger="not is_target_valid">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
-                <field name="url"/>
+                <field name="target_type"/>
+                <field name="route_path" optional="hide"/>
+                <field name="menu_xmlid" optional="hide"/>
+                <field name="launch_url" readonly="1"/>
+                <field name="is_target_valid" readonly="1"/>
                 <field name="icon"/>
                 <field name="gradient"/>
                 <field name="groups_id" widget="many2many_tags"/>
@@ -26,9 +30,21 @@
                     <group>
                         <group string="Thông tin">
                             <field name="name"/>
-                            <field name="url"/>
                             <field name="sequence"/>
                             <field name="active"/>
+                        </group>
+                        <group string="Điều hướng">
+                            <field name="target_type"/>
+                            <field name="route_path"
+                                   invisible="target_type != 'custom_route'"
+                                   required="target_type == 'custom_route'"/>
+                            <field name="menu_xmlid"
+                                   invisible="target_type != 'backend_menu'"
+                                   required="target_type == 'backend_menu'"/>
+                            <field name="launch_url" readonly="1"/>
+                            <field name="is_target_valid" readonly="1"/>
+                            <field name="target_error" readonly="1" invisible="not target_error"/>
+                            <field name="url" invisible="1"/>
                         </group>
                         <group string="Hiển thị">
                             <field name="icon"/>

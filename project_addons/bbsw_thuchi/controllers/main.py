@@ -20,10 +20,12 @@ class ProjectHomepage(http.Controller):
         user = request.env.user
         user_group_ids = user.groups_id.ids
         apps = request.env['bbsw.home.app'].search([
+            ('active', '=', True),
             '|',
             ('groups_id', '=', False),
             ('groups_id', 'in', user_group_ids),
         ])
+        apps = apps.filtered(lambda app: app.is_target_valid and app.launch_url)
         return request.render('bbsw_thuchi.project_homepage_template', {
             'apps': apps,
             'current_user': user,
@@ -32,6 +34,12 @@ class ProjectHomepage(http.Controller):
 
 
 class CustomHome(Home):
+    def _redirect_backend_menu(self, menu_xmlid, fallback='/web'):
+        launch_url, _error = request.env['bbsw.home.app']._menu_xmlid_to_launch_url(menu_xmlid)
+        if launch_url:
+            return request.redirect(launch_url)
+        return request.redirect(fallback)
+
     @http.route('/', auth='user')
     def index(self, **kw):
         return request.redirect('/project/home')
@@ -42,7 +50,7 @@ class CustomHome(Home):
 
     @http.route('/odoo/settings', auth='user')
     def odoo_settings(self, **kw):
-        return request.redirect('/web#action=84&model=res.config.settings&view_type=form&cids=1&menu_id=1')
+        return self._redirect_backend_menu('base_setup.menu_config')
 
     def _login_redirect(self, uid, redirect=None):
         if not redirect:
