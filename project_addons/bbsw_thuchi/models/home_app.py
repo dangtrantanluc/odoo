@@ -52,34 +52,8 @@ class HomeApp(models.Model):
     _order = 'sequence, id'
 
     name = fields.Char(string='Tên ứng dụng', required=True, translate=True)
-    url = fields.Char(
-        string='Đường dẫn URL (legacy)',
-        help='Trường cũ để tương thích dữ liệu launcher trước đây.',
-    )
-    target_type = fields.Selection([
-        ('custom_route', 'Route tùy chỉnh'),
-        ('backend_menu', 'Menu backend'),
-    ], string='Kiểu điều hướng', default='custom_route', required=True)
-    route_path = fields.Char(
-        string='Route tùy chỉnh',
-        help='Ví dụ: /project/thuchi hoặc /attendance/checkin',
-    )
-    menu_xmlid = fields.Char(
-        string='Menu XMLID',
-        help='Ví dụ: bbsw_thuchi.menu_nhansu_employee',
-    )
-    launch_url = fields.Char(
-        string='URL khởi chạy',
-        compute='_compute_target_info',
-    )
-    is_target_valid = fields.Boolean(
-        string='Target hợp lệ',
-        compute='_compute_target_info',
-    )
-    target_error = fields.Char(
-        string='Lỗi cấu hình',
-        compute='_compute_target_info',
-    )
+    description = fields.Char(string='Mô tả ngắn', translate=True)
+    url = fields.Char(string='Đường dẫn URL', required=True)
     icon = fields.Selection([
         ('money', 'Tài chính / Thu Chi'),
         ('users', 'Nhân sự'),

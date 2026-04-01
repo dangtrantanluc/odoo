@@ -68,6 +68,7 @@ class ThuChiRecord(models.Model):
     partner_id = fields.Many2one(
         'res.partner',
         string='Đối tác',
+        domain=[('user_ids', '=', False), ('parent_id', '=', False)],
         tracking=True,
     )
     employee_id = fields.Many2one(

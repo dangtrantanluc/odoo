@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Tree view đối tác -->
+    <record id="view_thuchi_partner_tree" model="ir.ui.view">
+        <field name="name">res.partner.thuchi.tree</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <tree string="Đối tác nội bộ Thu Chi">
+                <field name="is_bbsw_partner" widget="boolean_toggle" string="Nội bộ"/>
+                <field name="name" string="Tên đối tác"/>
+                <field name="phone" string="Điện thoại"/>
+                <field name="email" string="Email"/>
+                <field name="street" string="Địa chỉ"/>
+                <field name="company_type" string="Loại"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Inherit base partner form: ẩn mobile, thêm tab thu chi -->
+    <record id="view_thuchi_partner_form" model="ir.ui.view">
+        <field name="name">res.partner.thuchi.form</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <!-- Ẩn trường Di động -->
+            <field name="mobile" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </field>
+            <!-- Thêm tab Giao dịch Thu Chi -->
+            <notebook position="inside">
+                <page string="Giao dịch Thu Chi" name="thuchi_records">
+                    <field name="thuchi_record_ids" readonly="1">
+                        <tree string="Giao dịch Thu Chi">
+                            <field name="transaction_code" string="Mã giao dịch"/>
+                            <field name="date" string="Ngày giao dịch"/>
+                            <field name="name" string="Mô tả"/>
+                            <field name="type" string="Loại"/>
+                            <field name="category_id" string="Danh mục"/>
+                            <field name="amount" string="Số tiền"/>
+                            <field name="state" string="Trạng thái"/>
+                        </tree>
+                    </field>
+                </page>
+            </notebook>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_thuchi_partner_search" model="ir.ui.view">
+        <field name="name">res.partner.thuchi.search</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml">
+            <search string="Tìm đối tác">
+                <field name="name" string="Tên"/>
+                <field name="phone" string="Điện thoại"/>
+                <field name="email" string="Email"/>
+                <filter name="internal" string="Đối tác nội bộ" domain="[('is_bbsw_partner','=',True)]"/>
+                <filter name="companies" string="Công ty" domain="[('is_company','=',True)]"/>
+                <filter name="persons" string="Cá nhân" domain="[('is_company','=',False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_thuchi_partner" model="ir.actions.act_window">
+        <field name="name">Đối tác</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">tree,form</field>
+        <field name="domain">[]</field>
+        <field name="context">{'search_default_internal': 1}</field>
+        <field name="view_ids" eval="[
+            (5, 0, 0),
+            (0, 0, {'view_mode': 'tree', 'view_id': ref('view_thuchi_partner_tree')}),
+        ]"/>
+    </record>
+
+</odoo>
