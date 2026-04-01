@@ -6,13 +6,13 @@
         <field name="name">res.partner.thuchi.tree</field>
         <field name="model">res.partner</field>
         <field name="arch" type="xml">
-            <tree string="Đối tác">
+            <tree string="Đối tác nội bộ Thu Chi">
+                <field name="is_bbsw_partner" widget="boolean_toggle" string="Nội bộ"/>
                 <field name="name" string="Tên đối tác"/>
                 <field name="phone" string="Điện thoại"/>
                 <field name="email" string="Email"/>
                 <field name="street" string="Địa chỉ"/>
                 <field name="company_type" string="Loại"/>
-                <field name="active" string="Hoạt động"/>
             </tree>
         </field>
     </record>
@@ -55,9 +55,9 @@
                 <field name="name" string="Tên"/>
                 <field name="phone" string="Điện thoại"/>
                 <field name="email" string="Email"/>
+                <filter name="internal" string="Đối tác nội bộ" domain="[('is_bbsw_partner','=',True)]"/>
                 <filter name="companies" string="Công ty" domain="[('is_company','=',True)]"/>
                 <filter name="persons" string="Cá nhân" domain="[('is_company','=',False)]"/>
-                <filter name="active" string="Đang hoạt động" domain="[('active','=',True)]"/>
             </search>
         </field>
     </record>
@@ -67,8 +67,8 @@
         <field name="name">Đối tác</field>
         <field name="res_model">res.partner</field>
         <field name="view_mode">tree,form</field>
-        <field name="domain">[('thuchi_record_ids','!=',False)]</field>
-        <field name="context">{'search_default_active': 1}</field>
+        <field name="domain">[]</field>
+        <field name="context">{'search_default_internal': 1}</field>
         <field name="view_ids" eval="[
             (5, 0, 0),
             (0, 0, {'view_mode': 'tree', 'view_id': ref('view_thuchi_partner_tree')}),

@@ -93,7 +93,7 @@
                             <field name="object_type"/>
                             <field name="partner_id"
                                    invisible="object_type != 'partner'"
-                                   domain="[('user_ids', '=', False), ('parent_id', '=', False)]"/>
+                                   domain="[('is_bbsw_partner', '=', True)]"/>
                             <field name="employee_id"
                                    invisible="object_type != 'employee'"/>
                             <field name="student_name"
