@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Backlog List -->
+    <record id="view_bb_project_backlog_list" model="ir.ui.view">
+        <field name="name">bb.project.backlog.tree</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <tree string="Work Logs" multi_edit="1"
+                  decoration-success="status == 'approved'"
+                  decoration-danger="status == 'rejected'"
+                  decoration-warning="status == 'pending'">
+                <field name="work_date"/>
+                <field name="project_id"/>
+                <field name="task_id"/>
+                <field name="user_id"/>
+                <field name="hours"/>
+                <field name="cost_per_hour_snapshot"/>
+                <field name="total_cost_snapshot"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="status" widget="badge"
+                       decoration-success="status == 'approved'"
+                       decoration-danger="status == 'rejected'"
+                       decoration-warning="status == 'pending'"/>
+                <field name="approver_id"/>
+                <button name="action_approve" string="Approve" type="object" icon="fa-check"
+                        invisible="status != 'pending'"
+                        groups="bb_project_management.group_bb_pm_admin"/>
+                <button name="action_reject" string="Reject" type="object" icon="fa-times"
+                        invisible="status != 'pending'"
+                        groups="bb_project_management.group_bb_pm_admin"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Backlog Form -->
+    <record id="view_bb_project_backlog_form" model="ir.ui.view">
+        <field name="name">bb.project.backlog.form</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <form string="Work Log">
+                <header>
+                    <button name="action_approve" string="Approve" type="object"
+                            class="btn-success" invisible="status != 'pending'"
+                            groups="bb_project_management.group_bb_pm_admin"/>
+                    <button name="action_reject" string="Reject" type="object"
+                            class="btn-danger" invisible="status != 'pending'"
+                            groups="bb_project_management.group_bb_pm_admin"/>
+                    <button name="action_reset_to_pending" string="Reset to Pending" type="object"
+                            invisible="status == 'pending'"
+                            groups="bb_project_management.group_bb_pm_admin"/>
+                    <field name="status" widget="statusbar" statusbar_visible="pending,approved,rejected"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Work Info">
+                            <field name="task_id"/>
+                            <field name="project_id" readonly="1"/>
+                            <field name="user_id"/>
+                            <field name="work_date"/>
+                            <field name="hours"/>
+                        </group>
+                        <group string="Cost Info">
+                            <field name="cost_per_hour_snapshot"/>
+                            <field name="total_cost_snapshot"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="approver_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Description">
+                        <field name="description" nolabel="1" placeholder="Describe the work done..."/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Backlog inline list (inside task form) -->
+    <record id="view_bb_project_backlog_list_inline" model="ir.ui.view">
+        <field name="name">bb.project.backlog.tree.inline</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <tree string="Work Logs" editable="bottom"
+                  decoration-success="status == 'approved'"
+                  decoration-danger="status == 'rejected'">
+                <field name="work_date"/>
+                <field name="user_id"/>
+                <field name="hours"/>
+                <field name="cost_per_hour_snapshot" readonly="1"/>
+                <field name="total_cost_snapshot" readonly="1"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="description"/>
+                <field name="status" widget="badge"
+                       decoration-success="status == 'approved'"
+                       decoration-danger="status == 'rejected'"
+                       decoration-warning="status == 'pending'"/>
+                <button name="action_approve" string="" type="object" icon="fa-check"
+                        invisible="status != 'pending'"
+                        groups="bb_project_management.group_bb_pm_admin"/>
+                <button name="action_reject" string="" type="object" icon="fa-times"
+                        invisible="status != 'pending'"
+                        groups="bb_project_management.group_bb_pm_admin"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- ──────────────── BACKLOG KANBAN ──────────────── -->
+    <record id="view_bb_project_backlog_kanban" model="ir.ui.view">
+        <field name="name">bb.project.backlog.kanban</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="status" class="o_kanban_small_column">
+                <field name="user_id"/>
+                <field name="project_id"/>
+                <field name="work_date"/>
+                <field name="hours"/>
+                <field name="total_cost_snapshot"/>
+                <field name="currency_id"/>
+                <field name="status"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_card">
+                            <div class="o_kanban_record_top">
+                                <strong><field name="user_id"/></strong>
+                                <span class="badge text-bg-info ms-2"><field name="hours"/>h</span>
+                            </div>
+                            <div class="text-muted small mt-1">
+                                <i class="fa fa-folder-open-o"/> <field name="project_id"/>
+                            </div>
+                            <div class="text-muted small">
+                                <i class="fa fa-calendar"/> <field name="work_date"/>
+                            </div>
+                            <div t-if="record.total_cost_snapshot.raw_value > 0" class="text-success mt-1 fw-bold">
+                                <field name="total_cost_snapshot"/>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- ──────────────── BACKLOG CALENDAR ──────────────── -->
+    <record id="view_bb_project_backlog_calendar" model="ir.ui.view">
+        <field name="name">bb.project.backlog.calendar</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <calendar string="Work Logs" date_start="work_date" color="user_id" event_open_popup="True">
+                <field name="user_id" avatar_field="avatar_128"/>
+                <field name="project_id"/>
+                <field name="hours"/>
+                <field name="status"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- ──────────────── BACKLOG GRAPH ──────────────── -->
+    <record id="view_bb_project_backlog_graph" model="ir.ui.view">
+        <field name="name">bb.project.backlog.graph</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <graph string="Work Analysis" type="bar" sample="1">
+                <field name="project_id"/>
+                <field name="user_id"/>
+                <field name="hours" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- ──────────────── BACKLOG PIVOT ──────────────── -->
+    <record id="view_bb_project_backlog_pivot" model="ir.ui.view">
+        <field name="name">bb.project.backlog.pivot</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <pivot string="Time &amp; Cost Pivot" sample="1">
+                <field name="project_id" type="row"/>
+                <field name="user_id" type="row"/>
+                <field name="status" type="col"/>
+                <field name="hours" type="measure"/>
+                <field name="total_cost_snapshot" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- ──────────────── BACKLOG ACTIVITY ──────────────── -->
+    <record id="view_bb_project_backlog_activity" model="ir.ui.view">
+        <field name="name">bb.project.backlog.activity</field>
+        <field name="model">bb.project.backlog</field>
+        <field name="arch" type="xml">
+            <activity string="Work Logs">
+                <field name="user_id"/>
+                <templates>
+                    <div t-name="activity-box">
+                        <img t-att-src="activity_image('res.users', 'avatar_128', record.user_id.raw_value)" t-att-title="record.user_id.value" t-att-alt="record.user_id.value"/>
+                        <div>
+                            <field name="project_id" display="full"/>
+                            <field name="status" muted="1" display="full"/>
+                        </div>
+                    </div>
+                </templates>
+            </activity>
+        </field>
+    </record>
+
+    <!-- Backlog Actions -->
+    <record id="action_bb_project_backlog" model="ir.actions.act_window">
+        <field name="name">All Work Logs</field>
+        <field name="res_model">bb.project.backlog</field>
+        <field name="view_mode">tree,kanban,form,calendar,graph,pivot,activity</field>
+    </record>
+
+    <record id="action_bb_project_backlog_pending" model="ir.actions.act_window">
+        <field name="name">Pending Approval</field>
+        <field name="res_model">bb.project.backlog</field>
+        <field name="view_mode">tree,kanban,form,calendar,graph,pivot,activity</field>
+        <field name="domain">[('status', '=', 'pending')]</field>
+        <field name="context">{'search_default_status': 'pending'}</field>
+    </record>
+
+</odoo>
