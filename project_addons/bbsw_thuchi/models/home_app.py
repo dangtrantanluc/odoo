@@ -1,4 +1,4 @@
-from odoo import models, fields
+from odoo import api, fields, models
 
 
 class HomeApp(models.Model):
@@ -8,6 +8,11 @@ class HomeApp(models.Model):
 
     name = fields.Char(string='Tên ứng dụng', required=True, translate=True)
     url = fields.Char(string='Đường dẫn URL', required=True)
+    launch_url = fields.Char(
+        string='Đường dẫn khởi chạy',
+        compute='_compute_launch_url',
+        inverse='_inverse_launch_url',
+    )
     icon = fields.Selection([
         ('money', 'Tài chính / Thu Chi'),
         ('users', 'Nhân sự'),
@@ -43,3 +48,12 @@ class HomeApp(models.Model):
         string='Nhóm người dùng',
         help='Để trống = hiển thị cho tất cả người dùng',
     )
+
+    @api.depends('url')
+    def _compute_launch_url(self):
+        for record in self:
+            record.launch_url = record.url
+
+    def _inverse_launch_url(self):
+        for record in self:
+            record.url = record.launch_url

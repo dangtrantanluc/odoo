@@ -13,7 +13,7 @@
     --shadow-lg:    0 12px 32px rgba(0,0,0,0.12);
     --icon-size:    80px;
     --icon-radius:  20px;
-    --accent:       #4f46e5;
+    --accent:       #004aad;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -169,7 +169,7 @@
 
 .hp-search:focus-within {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(79,70,229,0.10);
+    box-shadow: 0 0 0 3px rgba(0,74,173,0.10);
 }
 
 .hp-search-icon { width: 16px; height: 16px; color: var(--text-3); flex-shrink: 0; }
