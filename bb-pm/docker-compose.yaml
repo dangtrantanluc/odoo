@@ -1,0 +1,68 @@
+services:
+  bb_pm_db:
+    image: postgres:16-alpine
+    container_name: bb_pm_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bbpm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bbpm_pwd}
+      POSTGRES_DB: ${POSTGRES_DB:-bb_pm}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - bb_pm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bbpm} -d ${POSTGRES_DB:-bb_pm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bb_pm_net
+
+  bb_pm_api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: bb_pm_api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-bbpm}:${POSTGRES_PASSWORD:-bbpm_pwd}@bb_pm_db:5432/${POSTGRES_DB:-bb_pm}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      API_PORT: 4000
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: ${MINIO_BUCKET:-bb-pm-avatars}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    depends_on:
+      bb_pm_db:
+        condition: service_healthy
+    networks:
+      - bb_pm_net
+
+  bb_pm_web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:4000/api/v1}
+    container_name: bb_pm_web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-5173}:80"
+    depends_on:
+      - bb_pm_api
+    networks:
+      - bb_pm_net
+
+volumes:
+  bb_pm_pgdata:
+
+networks:
+  bb_pm_net:
+    driver: bridge

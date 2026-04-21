@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.turbo
+coverage
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.pnpm-store
+apps/web/dist
+apps/api/dist
+apps/api/prisma/*.db
+apps/api/uploads

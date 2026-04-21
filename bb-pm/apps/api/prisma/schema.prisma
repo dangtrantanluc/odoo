@@ -1,0 +1,424 @@
+// BB-PM database schema
+// Derived from Odoo module bb_project_management (11 bb_* tables),
+// redesigned as a standalone database. Replaces res_users/res_company/
+// res_partner/res_currency with local tables (users/companies/customers/currencies).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Support tables (replace Odoo core)
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+model Company {
+  id         Int      @id @default(autoincrement())
+  name       String
+  code       String?  @unique
+  currencyId Int      @map("currency_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  currency  Currency  @relation(fields: [currencyId], references: [id])
+  users     User[]
+  projects  Project[]
+  tasks     Task[]
+  backlogs  Backlog[]
+
+  @@map("companies")
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  fullName      String    @map("full_name")
+  avatarUrl     String?   @map("avatar_url")
+  lang          String    @default("vi_VN")
+  timezone      String    @default("Asia/Ho_Chi_Minh")
+  role          Role      @default(MEMBER)
+  companyId     Int       @map("company_id")
+  active        Boolean   @default(true)
+  isSuperAdmin  Boolean   @default(false) @map("is_super_admin")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  company           Company         @relation(fields: [companyId], references: [id])
+  ownedProjects     Project[]       @relation("ProjectOwner")
+  amProjects        Project[]       @relation("ProjectAM")
+  assignedTasks     Task[]          @relation("TaskAssignee")
+  loggedBacklogs    Backlog[]       @relation("BacklogLogger")
+  approvedBacklogs  Backlog[]       @relation("BacklogApprover")
+  memberships       Member[]
+  assignedScopes    Scope[]         @relation("ScopeAssignee")
+  gapoMap           GapoUserMap?
+  refreshTokens     RefreshToken[]
+  notifications     Notification[]
+
+  @@index([companyId, active])
+  @@map("users")
+}
+
+model RefreshToken {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  tokenHash  String   @unique @map("token_hash")
+  expiresAt  DateTime @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Notification {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  type      String
+  title     String
+  message   String?   @db.Text
+  link      String?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  taxCode   String?  @map("tax_code")
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  projects Project[]
+
+  @@index([name])
+  @@map("customers")
+}
+
+model Currency {
+  id     Int      @id @default(autoincrement())
+  code   String   @unique
+  symbol String
+  rate   Decimal  @default(1.0) @db.Decimal(20, 6)
+
+  companies    Company[]
+  projects     Project[]
+  tasks        Task[]
+  backlogs     Backlog[]
+  memberRates  MemberRate[]
+  scopes       Scope[]
+
+  @@map("currencies")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Domain tables (ported from bb_*)
+// ─────────────────────────────────────────────────────────────
+
+enum ProjectStatus {
+  PLANNED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Project {
+  id   Int    @id @default(autoincrement())
+  name String
+  code String? @unique
+
+  status      ProjectStatus @default(PLANNED)
+  priority    Priority      @default(MEDIUM)
+  startDate   DateTime?     @db.Date  @map("start_date")
+  endDate     DateTime?     @db.Date  @map("end_date")
+  description String?       @db.Text
+
+  budget              Decimal? @db.Decimal(18, 2)
+  estimatedTotalCost  Decimal? @db.Decimal(18, 2) @map("estimated_total_cost")
+  estimatedTotalHours Float?   @map("estimated_total_hours")
+
+  // cached rollups
+  totalCost       Decimal @default(0) @db.Decimal(18, 2) @map("total_cost")
+  totalHours      Float   @default(0) @map("total_hours")
+  budgetRemaining Decimal? @db.Decimal(18, 2) @map("budget_remaining")
+  taskCount       Int     @default(0) @map("task_count")
+  memberCount     Int     @default(0) @map("member_count")
+  backlogCount    Int     @default(0) @map("backlog_count")
+  scopeCount      Int     @default(0) @map("scope_count")
+  milestoneCount  Int     @default(0) @map("milestone_count")
+
+  ownerId          Int    @map("owner_id")
+  companyId        Int    @map("company_id")
+  customerId       Int?   @map("customer_id")
+  accountManagerId Int?   @map("account_manager_id")
+  currencyId       Int?   @map("currency_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner          User      @relation("ProjectOwner", fields: [ownerId], references: [id])
+  accountManager User?     @relation("ProjectAM", fields: [accountManagerId], references: [id])
+  company        Company   @relation(fields: [companyId], references: [id])
+  customer       Customer? @relation(fields: [customerId], references: [id])
+  currency       Currency? @relation(fields: [currencyId], references: [id])
+
+  tasks       Task[]
+  members     Member[]
+  milestones  Milestone[]
+  scopes      Scope[]
+  backlogs    Backlog[]
+  memberRates MemberRate[]
+  tags        ProjectTag[]
+
+  @@index([companyId, status])
+  @@index([customerId])
+  @@map("projects")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+model Task {
+  id          Int        @id @default(autoincrement())
+  name        String
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  deadline    DateTime?  @db.Date
+  endAt       DateTime?  @db.Date @map("end_at")
+  description String?    @db.Text
+  result      String?    @db.Text
+  issues      String?    @db.Text
+
+  totalCost  Decimal @default(0) @db.Decimal(18, 2) @map("total_cost")
+  totalHours Float   @default(0) @map("total_hours")
+
+  projectId   Int  @map("project_id")
+  companyId   Int? @map("company_id")
+  assigneeId  Int? @map("assignee_id")
+  milestoneId Int? @map("milestone_id")
+  currencyId  Int? @map("currency_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  company   Company?   @relation(fields: [companyId], references: [id])
+  assignee  User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  milestone Milestone? @relation(fields: [milestoneId], references: [id])
+  currency  Currency?  @relation(fields: [currencyId], references: [id])
+
+  backlogs Backlog[]
+  tags     TaskTag[]
+  scopes   Scope[]
+
+  @@index([projectId, status])
+  @@index([assigneeId])
+  @@index([milestoneId])
+  @@map("tasks")
+}
+
+enum BacklogStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Backlog {
+  id                  Int           @id @default(autoincrement())
+  status              BacklogStatus @default(PENDING)
+  workDate            DateTime      @db.Date @map("work_date")
+  description         String?       @db.Text
+  hours               Decimal       @db.Decimal(6, 2)
+  costPerHourSnapshot Decimal?      @db.Decimal(18, 2) @map("cost_per_hour_snapshot")
+  totalCostSnapshot   Decimal?      @db.Decimal(18, 2) @map("total_cost_snapshot")
+
+  taskId         Int       @map("task_id")
+  projectId      Int?      @map("project_id")
+  companyId      Int?      @map("company_id")
+  userId         Int       @map("user_id")
+  currencyId     Int?      @map("currency_id")
+  approverId     Int?      @map("approver_id")
+  approvedAt     DateTime? @map("approved_at")
+  rejectedReason String?   @map("rejected_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  task     Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  project  Project?  @relation(fields: [projectId], references: [id])
+  company  Company?  @relation(fields: [companyId], references: [id])
+  user     User      @relation("BacklogLogger", fields: [userId], references: [id])
+  approver User?     @relation("BacklogApprover", fields: [approverId], references: [id])
+  currency Currency? @relation(fields: [currencyId], references: [id])
+
+  @@index([taskId, status])
+  @@index([projectId, status])
+  @@index([userId, workDate])
+  @@map("backlogs")
+}
+
+model Member {
+  id        Int      @id @default(autoincrement())
+  projectId Int      @map("project_id")
+  userId    Int      @map("user_id")
+  role      String?
+  joinedAt  DateTime @default(now()) @map("joined_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id])
+  rates   MemberRate[]
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("members")
+}
+
+model MemberRate {
+  id            Int       @id @default(autoincrement())
+  memberId      Int       @map("member_id")
+  projectId     Int?      @map("project_id")
+  userId        Int?      @map("user_id")
+  currencyId    Int?      @map("currency_id")
+  effectiveFrom DateTime  @db.Date @map("effective_from")
+  effectiveTo   DateTime? @db.Date @map("effective_to")
+  costPerHour   Decimal   @db.Decimal(18, 2) @map("cost_per_hour")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  member   Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  project  Project?  @relation(fields: [projectId], references: [id])
+  currency Currency? @relation(fields: [currencyId], references: [id])
+
+  @@index([memberId, effectiveFrom])
+  @@map("member_rates")
+}
+
+model Milestone {
+  id             Int       @id @default(autoincrement())
+  name           String
+  status         String?
+  dueDate        DateTime? @db.Date @map("due_date")
+  description    String?   @db.Text
+  taskCount      Int       @default(0) @map("task_count")
+  doneCount      Int       @default(0) @map("done_count")
+  completionPct  Int       @default(0) @map("completion_pct")
+  projectId      Int       @map("project_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId])
+  @@map("milestones")
+}
+
+model Scope {
+  id             Int      @id @default(autoincrement())
+  sequence       Int      @default(10)
+  name           String
+  notes          String?  @db.Text
+  estimatedHours Decimal? @db.Decimal(8, 2) @map("estimated_hours")
+  estimatedRate  Decimal? @db.Decimal(18, 2) @map("estimated_rate")
+  estimatedCost  Decimal? @db.Decimal(18, 2) @map("estimated_cost")
+  projectId      Int      @map("project_id")
+  taskId         Int?     @map("task_id")
+  assigneeId     Int?     @map("assignee_id")
+  currencyId     Int?     @map("currency_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task     Task?     @relation(fields: [taskId], references: [id])
+  assignee User?     @relation("ScopeAssignee", fields: [assigneeId], references: [id])
+  currency Currency? @relation(fields: [currencyId], references: [id])
+
+  @@index([projectId, sequence])
+  @@map("scopes")
+}
+
+model Tag {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  color     Int?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  projects ProjectTag[]
+  tasks    TaskTag[]
+
+  @@map("tags")
+}
+
+model ProjectTag {
+  projectId Int     @map("project_id")
+  tagId     Int     @map("tag_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, tagId])
+  @@map("project_tags")
+}
+
+model TaskTag {
+  taskId Int  @map("task_id")
+  tagId  Int  @map("tag_id")
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@map("task_tags")
+}
+
+model GapoUserMap {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique @map("user_id")
+  gapoUserId   BigInt   @map("gapo_user_id")
+  gapoThreadId BigInt   @map("gapo_thread_id")
+  gapoFullName String?  @map("gapo_full_name")
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([gapoUserId])
+  @@map("gapo_user_maps")
+}
