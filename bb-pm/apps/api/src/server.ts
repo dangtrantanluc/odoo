@@ -51,7 +51,14 @@ async function bootstrap() {
     origin: (process.env.CORS_ORIGIN ?? "http://localhost:5173").split(","),
     credentials: true,
   });
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  // Rate limit covers human/web traffic. Agent-token traffic (internal
+  // OpenClaw plugin → bb-pm API) is bypassed because the plugin already
+  // rate-limits /agent/run upstream (Sprint 6.2 Phase 1).
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: "1 minute",
+    allowList: (req) => !!req.headers["x-agent-token"],
+  });
   await app.register(jwtPlugin, {
     secret: process.env.JWT_SECRET ?? "dev-secret-change-me",
   });
