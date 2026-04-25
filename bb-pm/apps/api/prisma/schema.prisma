@@ -1,7 +1,4 @@
-// BB-PM database schema
-// Derived from Odoo module bb_project_management (11 bb_* tables),
-// redesigned as a standalone database. Replaces res_users/res_company/
-// res_partner/res_currency with local tables (users/companies/customers/currencies).
+// BB-PM database schema — standalone Postgres backing the PM Operations Agent.
 
 generator client {
   provider = "prisma-client-js"
@@ -13,7 +10,7 @@ datasource db {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Support tables (replace Odoo core)
+// Support tables
 // ─────────────────────────────────────────────────────────────
 
 enum Role {
@@ -65,8 +62,10 @@ model User {
   memberships       Member[]
   assignedScopes    Scope[]         @relation("ScopeAssignee")
   gapoMap           GapoUserMap?
+  channelIdentities ChannelIdentity[]
   refreshTokens     RefreshToken[]
   notifications     Notification[]
+  agentFollowUps    AgentFollowUp[]
 
   @@index([companyId, active])
   @@map("users")
@@ -136,7 +135,7 @@ model Currency {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Domain tables (ported from bb_*)
+// Domain tables
 // ─────────────────────────────────────────────────────────────
 
 enum ProjectStatus {
@@ -201,6 +200,7 @@ model Project {
   backlogs    Backlog[]
   memberRates MemberRate[]
   tags        ProjectTag[]
+  meetings    Meeting[]
 
   @@index([companyId, status])
   @@index([customerId])
@@ -246,6 +246,8 @@ model Task {
   backlogs Backlog[]
   tags     TaskTag[]
   scopes   Scope[]
+  blockers TaskBlocker[]
+  followUps AgentFollowUp[]
 
   @@index([projectId, status])
   @@index([assigneeId])
@@ -421,4 +423,206 @@ model GapoUserMap {
 
   @@index([gapoUserId])
   @@map("gapo_user_maps")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Multi-channel identity (Sprint 6 — Polish)
+// Generic mapping user ↔ external platform (Gapo/Slack/Zalo/Telegram/Email).
+// One user can have multiple rows per channel (e.g. 2 Telegram chats) —
+// `preferred` marks the default for send_follow_up routing.
+// GapoUserMap is kept for back-compat; ChannelIdentity is the new read path.
+// ─────────────────────────────────────────────────────────────
+
+enum ChannelKind {
+  gapo
+  slack
+  zalo
+  zalouser
+  telegram
+  email
+  sms
+}
+
+model ChannelIdentity {
+  id           Int         @id @default(autoincrement())
+  userId       Int         @map("user_id")
+  channel      ChannelKind
+  externalId   String      @map("external_id")
+  externalName String?     @map("external_name")
+  threadId     String?     @map("thread_id")
+  preferred    Boolean     @default(false)
+  lastSeenAt   DateTime    @default(now()) @map("last_seen_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channel, externalId])
+  @@index([userId, channel, preferred])
+  @@map("channel_identities")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Agent tables (PM Agent — OpenClaw bb-pm-tools plugin)
+// ─────────────────────────────────────────────────────────────
+
+enum AgentAuditSource {
+  chat
+  cron
+  cli
+  other
+}
+
+model AgentAuditLog {
+  id             Int              @id @default(autoincrement())
+  tool           String
+  argsJson       Json             @map("args_json")
+  resultJson     Json?            @map("result_json")
+  errorMessage   String?          @map("error_message") @db.Text
+  durationMs     Int?             @map("duration_ms")
+  correlationId  String?          @map("correlation_id")
+  source         AgentAuditSource @default(chat)
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  @@index([tool, createdAt])
+  @@index([correlationId])
+  @@map("agent_audit_log")
+}
+
+enum BlockerSeverity {
+  LOW
+  MED
+  HIGH
+}
+
+model TaskBlocker {
+  id          Int             @id @default(autoincrement())
+  taskId      Int             @map("task_id")
+  severity    BlockerSeverity @default(MED)
+  description String          @db.Text
+  resolvedAt  DateTime?       @map("resolved_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, resolvedAt])
+  @@map("task_blockers")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Agent follow-ups (Sprint 6.2 — Ops hardening)
+// Persistent log of every send_follow_up that actually fired. Lets the
+// agent answer "ai chưa reply?" and lets ops audit who got pinged when.
+// Pairs with the Redis cooldown: cooldown enforces "don't double-ping",
+// this table answers "what did we ping for?".
+// ─────────────────────────────────────────────────────────────
+
+enum FollowUpStatus {
+  PENDING
+  REPLIED
+  EXPIRED
+  CANCELLED
+}
+
+model AgentFollowUp {
+  id            Int            @id @default(autoincrement())
+  taskId        Int            @map("task_id")
+  userId        Int            @map("user_id")
+  channel       ChannelKind    @default(gapo)
+  threadId      String?        @map("thread_id")
+  question      String         @db.Text
+  status        FollowUpStatus @default(PENDING)
+  askedAt       DateTime       @default(now()) @map("asked_at")
+  repliedAt     DateTime?      @map("replied_at")
+  replyText     String?        @db.Text @map("reply_text")
+  correlationId String?        @map("correlation_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([taskId, status])
+  @@index([status, askedAt])
+  @@map("agent_follow_ups")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Agent memory (Sprint 4 — Level 3)
+// Persisted summaries of past agent runs; recalled at start of a new
+// run to give the orchestrator context. Text-only today; vector column
+// reserved for a future pgvector upgrade (see migration).
+// ─────────────────────────────────────────────────────────────
+
+model AgentMemory {
+  id             Int              @id @default(autoincrement())
+  companyId      Int              @map("company_id")
+  conversationId String?          @map("conversation_id")
+  source         AgentAuditSource @default(chat)
+  userText       String           @db.Text @map("user_text")
+  replyText      String           @db.Text @map("reply_text")
+  summary        String           @db.Text
+  toolsUsed      Json             @default("[]") @map("tools_used")
+  projectIds     Int[]            @default([]) @map("project_ids")
+  taskIds        Int[]            @default([]) @map("task_ids")
+  correlationId  String?          @map("correlation_id")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  @@index([companyId, createdAt])
+  @@index([conversationId])
+  @@map("agent_memory")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Meeting Assistant (Sprint 5 — Level 4 Coordinator)
+// Transcript → LLM extraction → human-in-the-loop approval → tasks.
+// ─────────────────────────────────────────────────────────────
+
+enum MeetingItemStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+}
+
+model Meeting {
+  id           Int      @id @default(autoincrement())
+  companyId    Int      @map("company_id")
+  projectId    Int?     @map("project_id")
+  title        String?
+  heldAt       DateTime @default(now()) @map("held_at")
+  transcript   String   @db.Text
+  summary      String?  @db.Text
+  decisions    Json     @default("[]")
+  participants String[] @default([])
+  createdById  Int?     @map("created_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  project Project?              @relation(fields: [projectId], references: [id])
+  items   MeetingActionItem[]
+
+  @@index([companyId, createdAt])
+  @@index([projectId])
+  @@map("meetings")
+}
+
+model MeetingActionItem {
+  id             Int               @id @default(autoincrement())
+  meetingId      Int               @map("meeting_id")
+  title          String
+  description    String?           @db.Text
+  ownerName      String?           @map("owner_name")
+  ownerUserId    Int?              @map("owner_user_id")
+  dueDate        DateTime?         @db.Date @map("due_date")
+  priority       Priority          @default(MEDIUM)
+  status         MeetingItemStatus @default(DRAFT)
+  createdTaskId  Int?              @map("created_task_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId, status])
+  @@map("meeting_action_items")
 }

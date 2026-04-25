@@ -19,6 +19,23 @@ services:
     networks:
       - bb_pm_net
 
+  bb_pm_redis:
+    image: redis:7-alpine
+    container_name: bb_pm_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - bb_pm_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - bb_pm_net
+
   bb_pm_api:
     build:
       context: .
@@ -62,6 +79,7 @@ services:
 
 volumes:
   bb_pm_pgdata:
+  bb_pm_redis_data:
 
 networks:
   bb_pm_net:

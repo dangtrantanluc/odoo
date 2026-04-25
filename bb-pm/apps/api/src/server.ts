@@ -29,12 +29,18 @@ import adminUsersRoutes from "./modules/admin/users/routes.js";
 import companyAdminRoutes from "./modules/admin/company/routes.js";
 import currenciesRoutes from "./modules/admin/currencies/routes.js";
 import notificationsRoutes from "./modules/notifications/routes.js";
+import agentRoutes from "./modules/agent/routes.js";
+import meetingsRoutes from "./modules/meetings/routes.js";
 
 async function bootstrap() {
   const app = Fastify({
     logger: {
       transport: process.env.NODE_ENV === "production" ? undefined : { target: "pino-pretty" },
     },
+    genReqId: (req) =>
+      (req.headers["x-request-id"] as string | undefined) ??
+      (req.headers["x-correlation-id"] as string | undefined) ??
+      `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
@@ -62,9 +68,48 @@ async function bootstrap() {
   await app.register(authPlugin);
   errorHandler(app);
 
-  app.get("/api/v1/health", async () => {
-    const dbOk = await app.prisma.$queryRawUnsafe("SELECT 1").then(() => true).catch(() => false);
-    return { status: "ok", db: dbOk ? "ok" : "down", uptime: process.uptime() };
+  app.get("/api/v1/health", async (_req, reply) => {
+    const startedAt = Date.now();
+    const dbStart = Date.now();
+    const dbOk = await app.prisma
+      .$queryRawUnsafe("SELECT 1")
+      .then(() => true)
+      .catch(() => false);
+    const dbLatencyMs = Date.now() - dbStart;
+
+    const checks: Record<string, { status: string; latencyMs?: number; error?: string }> = {
+      db: { status: dbOk ? "ok" : "down", latencyMs: dbLatencyMs },
+    };
+
+    // Optional Redis ping if REDIS_URL is set. Redis is non-critical for the
+    // bb-pm API, so a Redis-down state stays 200.
+    if (process.env.REDIS_URL) {
+      try {
+        const { default: IORedis } = await import("ioredis");
+        const r = new IORedis(process.env.REDIS_URL, {
+          lazyConnect: true,
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
+          connectTimeout: 1500,
+        });
+        const rStart = Date.now();
+        await r.connect();
+        await r.ping();
+        await r.quit();
+        checks.redis = { status: "ok", latencyMs: Date.now() - rStart };
+      } catch (err: any) {
+        checks.redis = { status: "down", error: err?.message ?? String(err) };
+      }
+    }
+
+    // DB outage = 503; everything else = 200 with per-check status.
+    const code = dbOk ? 200 : 503;
+    return reply.code(code).send({
+      status: dbOk ? "ok" : "degraded",
+      uptime: process.uptime(),
+      checks,
+      tookMs: Date.now() - startedAt,
+    });
   });
 
   await app.register(authRoutes, { prefix: "/api/v1/auth" });
@@ -84,6 +129,8 @@ async function bootstrap() {
   await app.register(companyAdminRoutes, { prefix: "/api/v1/admin/company" });
   await app.register(currenciesRoutes, { prefix: "/api/v1/admin/currencies" });
   await app.register(notificationsRoutes, { prefix: "/api/v1/notifications" });
+  await app.register(agentRoutes, { prefix: "/api/v1/agent" });
+  await app.register(meetingsRoutes, { prefix: "/api/v1/meetings" });
 
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen({ port, host: "0.0.0.0" });

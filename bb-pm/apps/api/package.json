@@ -14,8 +14,7 @@
     "db:seed": "dotenv -e ../../.env -- prisma db seed",
     "db:generate": "dotenv -e ../../.env -- prisma generate",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
-    "db:reset": "dotenv -e ../../.env -- prisma migrate reset",
-    "migrate:odoo": "dotenv -e ../../.env -- tsx prisma/migrate-from-odoo.ts"
+    "db:reset": "dotenv -e ../../.env -- prisma migrate reset"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -34,6 +33,7 @@
     "fastify": "^5.1.0",
     "fastify-plugin": "^5.1.0",
     "fastify-type-provider-zod": "^4.0.2",
+    "ioredis": "^5.4.1",
     "pg": "^8.13.1",
     "pino-pretty": "^11.3.0",
     "zod": "^3.23.8"
