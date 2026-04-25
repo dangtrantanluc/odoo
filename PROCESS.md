@@ -1,7 +1,7 @@
 # PM Operations Agent — Process & Progress Tracker
 
 > Nhật ký tiến độ build hệ thống **PM Operations Agent** (OpenClaw + bb-pm).
-> Cập nhật lần cuối: **2026-04-24 10:00** — Sprint 6.1 Multi-channel Identity DONE. LLM retry logic + IPv4 DNS fix operational.
+> Cập nhật lần cuối: **2026-04-25 17:00** — Sprint 6.2 (4 phases) + Sprint 3.5 scaffold DONE. 5 branches cục bộ chờ push lên GitHub.
 
 Tham chiếu thiết kế: [PMOperationsAgent.md](./PMOperationsAgent.md) · [bb-pm/ARCHITECTURE.md](./bb-pm/ARCHITECTURE.md)
 
@@ -325,8 +325,8 @@ Theo [PMOperationsAgent.md §4.7](./PMOperationsAgent.md):
 | **S4** Summarizer | L3 | Flow 5 + 6 Weekly: agent_memory, recall_memory, generate_weekly_report, CEO query | ✅ DONE 2026-04-24 |
 | **S5** Coordinator | L4 | Flow 4 + 8: meeting transcript → action items (DRAFT + approve), planning suggestion qua prompt | ✅ DONE 2026-04-24 |
 | **S6.1** Multi-channel Identity | — | `channel_identities` generic schema + CRUD + back-compat `/gapo-thread` | ✅ **DONE 2026-04-24** |
-| **S6.2** Polish remaining | — | Audit dashboard UI, E2E test suite, load test, ops hardening | ⏳ NEXT |
-| **S3.5** Browser capability | — | Playwright tools cho initiate DM khi bot API không đủ | ⏳ deferred |
+| **S6.2** Polish remaining | — | Audit dashboard UI, E2E test suite, load test, ops hardening | ✅ **DONE 2026-04-25** (4 phases, xem §13) |
+| **S3.5** Browser capability | — | Playwright tools cho initiate DM khi bot API không đủ | 🟡 **scaffold DONE 2026-04-25** — chờ Gapo account + selector inspection |
 | **S4.5** Gmail + pgvector | — | Flow 6 Gmail delivery + swap memory recall sang vector embedding | ⏳ |
 | **S5.5** Whisper | — | Audio upload → transcript → ingest_meeting | ⏳ |
 
@@ -344,7 +344,7 @@ Theo [PMOperationsAgent.md §4.7](./PMOperationsAgent.md):
 
 ### 8.2 Sprint 3 nice-to-have
 
-- [ ] Swap `cooldown.ts` sang Redis-backed (add ioredis + keep interface)
+- [x] **Swap `cooldown.ts` sang Redis-backed** (add ioredis + keep interface) — done in S6.2 Phase 1
 - [ ] Inbound reply parser ("xong rồi" / "đang kẹt X" / "ETA <date>") → auto `update_task_status` hoặc `post_blocker`
 - [ ] Thread tracker map `threadId → taskId` trong Redis để `send_follow_up` reply khớp task
 
@@ -481,3 +481,173 @@ journalctl --user -u openclaw-gateway -n 100 --no-pager
 tail -f /tmp/openclaw/openclaw-$(date +%F).log
 docker logs bb_pm_db --tail 50
 ```
+
+---
+
+## 13. Sprint 6.2 + S3.5 — execution log (2026-04-25)
+
+5 branches cục bộ, mỗi phase = 1 commit, branch sau base lên branch trước:
+
+```
+main
+└── phase1-ops-hardening      → 4b621d84 + 5e79734f
+    └── phase2-audit-dashboard → 7b8e0269
+        └── phase3-e2e-tests   → b5306ae3
+            └── phase4-load-test → 697d6811
+                └── phase5-browser-capability → d9b85e15
+```
+
+### Phase 1 — Ops hardening (S6.2)
+
+Branch `phase1-ops-hardening` (2 commits, 50 files / 7.4k lines).
+- `chore: import prior sprint work (S1-S6.1)` — gom toàn bộ work S1-S6.1
+  chưa từng được commit (bb-pm-tools/, modules/agent, modules/meetings, 5
+  prior migrations, ARCHITECTURE/PROCESS/PMOperationsAgent docs, skill/,
+  docker/) thành 1 commit baseline.
+- `feat(s6.2): Phase 1 ops hardening` — Phase 1 deltas:
+  - Redis service trong `docker-compose.yaml` (port 6379, AOF persistence,
+    LRU 256MB, healthcheck)
+  - `bb-pm-tools/src/redis.ts` — ioredis lazy client với in-memory fallback
+  - `bb-pm-tools/src/cooldown.ts` — refactor sang Redis-backed (giữ interface)
+  - `bb-pm-tools/src/rate-limit.ts` — token bucket cho `/agent/run` (Redis hoặc
+    in-process), 30 req/min default keyed by `correlationId` hoặc IP
+  - `bb-pm-tools/src/webhook.ts` — req id propagation + `X-Request-Id` header
+  - `AgentFollowUp` model + `FollowUpStatus` enum + migration
+    `20260425000000_add_agent_follow_ups` — persistent log mọi `send_follow_up`
+  - 3 endpoint mới: `POST /agent/follow-up`, `GET /agent/follow-ups`,
+    `PATCH /agent/follow-up/:id`
+  - 2 tool mới trong bb-pm-tools: `list_pending_follow_ups`, `mark_follow_up_replied`
+  - Deep `/api/v1/health` — DB + optional Redis ping với per-check latency,
+    503 chỉ khi DB down
+  - `genReqId` ở Fastify logger
+
+**Verify:** smoke-tested toàn bộ endpoint, health trả `{db: ok, redis: ok}`,
+follow-up CRUD pass, Redis SET/GET/PTTL/DEL hoạt động.
+
+### Phase 2 — Audit dashboard UI (S6.2)
+
+Branch `phase2-audit-dashboard` (1 commit, 5 files / 707 lines).
+- Backend: `GET /agent/audit/stats` rollup (totals/byTool/bySource/byDay/
+  topCorrelations), `GET /agent/audit` mở rộng cursor pagination + filter
+  (source, hasError, daysBack)
+- Frontend SPA:
+  - `features/agent-audit/api.ts` — typed client
+  - `pages/settings/AgentAuditPage.tsx` — KPI cards (tổng calls, error rate,
+    top tool, source mix), Recharts daily volume bar chart, per-tool table
+    với p50/p95, top 5 correlation noisy threads, audit table với filter
+    (tool/source/correlationId/errors-only), detail modal (argsJson +
+    resultJson), timeline modal (mọi tool call cùng correlationId)
+  - `SettingsLayout`: mở `/settings` cho MANAGER (trước chỉ ADMIN) để PM
+    consume dashboard
+- Wired `/settings/agent-audit` route + nav tab
+
+**Verify:** stats endpoint trả 28 calls, 14% error rate (do Qwen flap trước
+đó), TypeScript typecheck clean.
+
+### Phase 3 — E2E test suite (S6.2)
+
+Branch `phase3-e2e-tests` (1 commit, 10 files / 645 lines).
+- `bb-pm/docker-compose.test.yaml` — Postgres :5434 + Redis :6380 trên tmpfs,
+  isolated với dev DB
+- `apps/api/vitest.config.ts` — globalSetup spin up containers, apply
+  migrations, seed fixtures (1 company + 1 admin + 1 agent service user + 1
+  dev + 1 project + 2 tasks)
+- `apps/api/tests/e2e/helpers.ts` — minimal Fastify builder (skip CORS/static/
+  multipart) + agentHeaders helper
+- 3 test suite (17 tests):
+  - `audit.spec.ts` — POST/GET /audit, cursor pagination, source + hasError
+    filters, GET /audit/stats với percentile correctness
+  - `follow-ups.spec.ts` — POST tạo PENDING, 404 trên bad taskId, GET với
+    task+user join, PATCH transition REPLIED
+  - `tasks-agent.spec.ts` — /tasks/overdue, /projects/digest, /tasks/:id/blocker,
+    X-Agent-Token rejection
+- Scripts mới: `pnpm test`, `test:keep` (giữ container), `test:watch`
+
+**Bug fix on the way:** percentile() switch sang nearest-rank
+(`ceil(p/100*N)-1`) thay vì floor — p95 of [10,20,30,40,100] giờ trả đúng 100.
+
+**Verify:** 17/17 pass on first clean run, ~7s end-to-end.
+
+### Phase 4 — Load test (S6.2)
+
+Branch `phase4-load-test` (1 commit, 5 files / 344 lines).
+- `bb-pm/tests/load/agent-api.js` — k6 read load: 4 endpoints (overdue,
+  digest, audit list, audit stats), 20 VUs ramped over 80s, per-endpoint
+  p95 thresholds (500ms reads, 800ms stats)
+- `bb-pm/tests/load/follow-up-write.js` — POST /agent/follow-up, 5 VUs / 20s
+- README + RESULTS-2026-04-25.md (baseline)
+
+**Issue surfaced + fixed during run:** first run hit 95.8% HTTP failures vì
+`@fastify/rate-limit` (300 req/min) reject mọi burst. Fix:
+`allowList: (req) => !!req.headers["x-agent-token"]` — agent traffic bypass
+plugin bucket vì OpenClaw đã rate-limit upstream ở `/agent/run` (Phase 1).
+
+**Baseline (after fix):**
+- Reads: 172 RPS, p95 7ms, 0% errors
+- Writes (follow-up): 1000 RPS @ 5 VUs, p95 6ms, 0% errors
+- Headroom: 60-300× over SLO; bottleneck là Node event loop, không phải DB.
+
+### Phase 5 — Browser capability scaffold (S3.5)
+
+Branch `phase5-browser-capability` (1 commit, 18 files / ~1.3k lines).
+
+**Plugin mới `browser-tools/`** (sibling của bb-pm-tools, gapo-work):
+- `src/browser.ts` — singleton Chromium với persisted storage state, lazy
+  launch, auto-relaunch khi crash
+- `src/gapo-actions.ts` — 4 action: `gapoFindUser`, `gapoSendDm`,
+  `gapoReadThread`, `gapoGetUserStatus`. SEL block isolated — selectors
+  hiện là **placeholder**, sẽ update khi có Gapo DOM thật. Miss throw
+  `SelectorMissError` với stage tag.
+- `src/auth-cli.ts` — `pnpm auth` mở headed Chromium, user login thủ công
+  (incl. 2FA), save storage state vào `~/.openclaw/plugins/browser-tools/storage-state.json`
+- `src/throttle.ts` — in-memory hourly DM cap (default 30/hr) chống Gapo
+  anti-spam
+- `src/index.ts` — 5 OpenClaw route (health + 4 action), gated bằng
+  `X-Plugin-Token` (`BROWSER_TOOLS_TOKEN`)
+- `README.md` đầy đủ + `.env.example`
+
+**Wire fallback vào `bb-pm-tools/src/tools.ts`:**
+- `send_follow_up` giờ thử bot API trước (ChannelIdentity → gapo-work /send),
+  nếu `no_gapo_thread` → fallback gọi `browser-tools /send-dm` qua
+  `sendDmViaBrowser()`.
+- Response thêm `deliveredVia: "gapo-bot" | "browser"` để audit log + LLM
+  reason về delivery channel.
+- Off by default — cần (a) `BROWSER_TOOLS_TOKEN` set ở 2 plugin, (b) storage
+  state file. Chưa có → trả `no_gapo_thread` clean.
+
+**Còn lại (cho S3.5 production):**
+1. Tạo dedicated Gapo account `pm-bot@bluebolt`
+2. `pnpm auth` để login lần đầu, save storage state
+3. Inspect Gapo DOM, update SEL block trong `gapo-actions.ts`
+4. Smoke test send_dm với task thật
+5. (Nice) Auto-renewal session, screenshot-on-error → MinIO
+
+---
+
+## 14. Branches chờ push (2026-04-25)
+
+5 branch local, mỗi branch = 1 PR riêng:
+
+| Branch | Commits | Status |
+|---|---|---|
+| `phase1-ops-hardening` | 2 | ⏳ chưa push |
+| `phase2-audit-dashboard` | 1 (lên trên P1) | ⏳ chưa push |
+| `phase3-e2e-tests` | 1 (lên trên P2) | ⏳ chưa push |
+| `phase4-load-test` | 1 (lên trên P3) | ⏳ chưa push |
+| `phase5-browser-capability` | 1 (lên trên P4) | ⏳ chưa push |
+
+`git push` cần auth (HTTPS PAT hoặc SSH key add lên GitHub) — pending user setup.
+
+Remote hiện tại: `https://github.com/dangtrantanluc/odoo` (tên legacy từ thời Odoo, có thể rename repo sau).
+
+---
+
+## 15. Changelog mới (2026-04-25)
+
+| Ngày | Việc | Người |
+|---|---|---|
+| **2026-04-25 (S6.2 P1)** | Redis service compose + cooldown refactor + AgentFollowUp + deep health + rate limit + req id. Migration `20260425000000`. Smoke test passed. | Claude |
+| **2026-04-25 (S6.2 P2)** | `/agent/audit/stats` rollup endpoint + cursor pagination cho `/agent/audit`. React audit dashboard tại `/settings/agent-audit` với KPI cards + Recharts + per-tool table + drill-down + timeline view. Settings opened cho MANAGER. | Claude |
+| **2026-04-25 (S6.2 P3)** | Vitest + Postgres test container :5434 + Redis :6380 + globalSetup + 17 integration test pass (audit/follow-ups/tasks-agent). Percentile fix nearest-rank. | Claude |
+| **2026-04-25 (S6.2 P4)** | k6 scripts (read 172 RPS p95 7ms, write 1000 RPS p95 6ms, 0% error). Surfaced rate-limit issue + fix `allowList` cho X-Agent-Token traffic. | Claude |
+| **2026-04-25 (S3.5 scaffold)** | Plugin `browser-tools` mới (Playwright + 4 action + auth CLI + throttle). Wire fallback vào `send_follow_up` qua `sendDmViaBrowser()`. Selectors placeholder, off by default. | Claude |
