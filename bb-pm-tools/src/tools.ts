@@ -1,6 +1,6 @@
 import { bbPm } from "./api-client";
 import { cooldown } from "./cooldown";
-import { sendToGapo } from "./channel-out";
+import { sendToGapo, sendDmViaBrowser } from "./channel-out";
 import { extractMeetingFromTranscript } from "./meeting";
 
 export type ToolDefinition<TArgs, TResult> = {
@@ -406,17 +406,42 @@ export const tools: ToolDefinition<any, any>[] = [
           remainingSec: await cooldown.remainingSec(key),
         };
       }
-      let threadId: string;
+
+      // Try the bot API path first: look up an existing Gapo thread for
+      // the user, post via gapo-work /send.
+      let threadId: string | null = null;
+      let externalId: string | null = null;
       try {
         const res = await bbPm.getGapoThread(args.userId);
         threadId = res.data.gapoThreadId;
+        externalId = res.data.gapoUserId;
       } catch (err: any) {
-        if (/404/.test(err?.message || "")) {
+        if (!/404/.test(err?.message || "")) throw err;
+        // No Gapo thread → fall through to browser fallback.
+      }
+
+      let deliveredVia: "gapo-bot" | "browser" | "none" = "none";
+
+      if (threadId) {
+        await sendToGapo(threadId, question);
+        deliveredVia = "gapo-bot";
+      } else {
+        // Browser fallback (Sprint 3.5). Needs an externalId — without
+        // one, even browser can't address the recipient. Skip cleanly.
+        if (!externalId) {
           return { skipped: "no_gapo_thread" };
         }
-        throw err;
+        const fallback = await sendDmViaBrowser(externalId, question);
+        if (!fallback.sent) {
+          return {
+            skipped: "no_gapo_thread",
+            fallback: { reason: fallback.reason, message: fallback.message },
+          };
+        }
+        deliveredVia = "browser";
+        threadId = fallback.messageId; // best-effort handle for record
       }
-      await sendToGapo(threadId, question);
+
       await cooldown.mark(key);
       let followUpId: number | undefined;
       try {
@@ -424,7 +449,7 @@ export const tools: ToolDefinition<any, any>[] = [
           taskId: args.taskId,
           userId: args.userId,
           channel: "gapo",
-          threadId,
+          threadId: threadId ?? undefined,
           question,
         });
         followUpId = rec.data.id;
@@ -435,6 +460,7 @@ export const tools: ToolDefinition<any, any>[] = [
       return {
         sent: true,
         threadId,
+        deliveredVia,
         followUpId,
         cooldownSec: await cooldown.remainingSec(key),
       };

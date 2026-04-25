@@ -1,0 +1,14 @@
+{
+  "id": "browser-tools",
+  "enabledByDefault": false,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "basePath": {
+        "type": "string",
+        "default": "/api/plugins/browser-tools"
+      }
+    }
+  }
+}
