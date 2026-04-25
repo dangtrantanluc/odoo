@@ -136,10 +136,13 @@ const agentRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
+    // Nearest-rank percentile: the smallest value at-or-above which p% of
+    // observations fall. p95 of 5 sorted observations = the 5th
+    // (idx 4 = ceil(0.95*5)-1).
     const percentile = (xs: number[], p: number) => {
       if (!xs.length) return null;
       const sorted = [...xs].sort((a, b) => a - b);
-      const idx = Math.min(sorted.length - 1, Math.floor(((sorted.length - 1) * p) / 100));
+      const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
       return sorted[idx];
     };
 

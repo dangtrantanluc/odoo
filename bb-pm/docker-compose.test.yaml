@@ -1,0 +1,29 @@
+services:
+  bb_pm_test_db:
+    image: postgres:16-alpine
+    container_name: bb_pm_test_db
+    environment:
+      POSTGRES_USER: bbpm_test
+      POSTGRES_PASSWORD: bbpm_test_pwd
+      POSTGRES_DB: bb_pm_test
+    ports:
+      - "5434:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bbpm_test -d bb_pm_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  bb_pm_test_redis:
+    image: redis:7-alpine
+    container_name: bb_pm_test_redis
+    command: ["redis-server", "--save", ""]
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
