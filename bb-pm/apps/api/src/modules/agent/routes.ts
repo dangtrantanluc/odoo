@@ -18,6 +18,14 @@ const listQuery = z.object({
   limit: z.coerce.number().int().positive().max(200).optional().default(50),
   tool: z.string().optional(),
   correlationId: z.string().optional(),
+  source: z.enum(["chat", "cron", "cli", "other"]).optional(),
+  hasError: z.coerce.boolean().optional(),
+  daysBack: z.coerce.number().int().positive().max(365).optional().default(7),
+  cursor: z.coerce.number().int().positive().optional(),
+});
+
+const statsQuery = z.object({
+  daysBack: z.coerce.number().int().positive().max(90).optional().default(7),
 });
 
 const agentRoutes: FastifyPluginAsync = async (app) => {
@@ -43,18 +51,136 @@ const agentRoutes: FastifyPluginAsync = async (app) => {
 
   // GET /agent/audit — recent entries, for inspection / debugging.
   // Agent-authenticated users get all; human users company-scoped is moot
-  // (audit log is global infra).
+  // (audit log is global infra). Supports cursor pagination on id desc.
   app.get("/audit", { schema: { querystring: listQuery } }, async (req) => {
     const q = req.query as z.infer<typeof listQuery>;
-    const where: any = {};
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - q.daysBack);
+
+    const where: any = { createdAt: { gte: cutoff } };
     if (q.tool) where.tool = q.tool;
     if (q.correlationId) where.correlationId = q.correlationId;
+    if (q.source) where.source = q.source;
+    if (q.hasError === true) where.errorMessage = { not: null };
+    if (q.hasError === false) where.errorMessage = null;
+    if (q.cursor) where.id = { lt: q.cursor };
+
     const rows = await app.prisma.agentAuditLog.findMany({
       where,
       take: q.limit,
       orderBy: { id: "desc" },
     });
-    return { data: rows, meta: { total: rows.length } };
+    const nextCursor = rows.length === q.limit ? rows[rows.length - 1].id : null;
+    return {
+      data: rows,
+      meta: { total: rows.length, cutoff: cutoff.toISOString(), nextCursor },
+    };
+  });
+
+  // GET /agent/audit/stats — rollup for the audit dashboard. Returns:
+  //   - totals: count, errorCount, errorRate
+  //   - byTool: per-tool count + p50/p95 duration + error rate
+  //   - bySource: chat/cron/cli/other distribution
+  //   - byDay: daily count + error count for sparkline / chart
+  //   - topCorrelations: 5 noisiest correlation ids (debugging long flows)
+  app.get("/audit/stats", { schema: { querystring: statsQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof statsQuery>;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - q.daysBack);
+
+    // Pull everything in window once. AuditLog is small per day; tens of
+    // thousands per week is fine for in-memory rollup. If volume grows
+    // beyond ~100k rows, switch to SQL aggregation per metric.
+    const rows = await app.prisma.agentAuditLog.findMany({
+      where: { createdAt: { gte: cutoff } },
+      select: {
+        tool: true,
+        durationMs: true,
+        errorMessage: true,
+        source: true,
+        correlationId: true,
+        createdAt: true,
+      },
+    });
+
+    const total = rows.length;
+    const errorCount = rows.filter((r) => r.errorMessage).length;
+
+    const byTool = new Map<
+      string,
+      { count: number; errorCount: number; durations: number[] }
+    >();
+    const bySource: Record<string, number> = {
+      chat: 0, cron: 0, cli: 0, other: 0,
+    };
+    const byDay = new Map<string, { count: number; errorCount: number }>();
+    const byCorrelation = new Map<string, number>();
+
+    for (const r of rows) {
+      const slot = byTool.get(r.tool) ?? { count: 0, errorCount: 0, durations: [] };
+      slot.count += 1;
+      if (r.errorMessage) slot.errorCount += 1;
+      if (r.durationMs != null) slot.durations.push(r.durationMs);
+      byTool.set(r.tool, slot);
+
+      bySource[r.source] = (bySource[r.source] ?? 0) + 1;
+
+      const day = r.createdAt.toISOString().slice(0, 10);
+      const d = byDay.get(day) ?? { count: 0, errorCount: 0 };
+      d.count += 1;
+      if (r.errorMessage) d.errorCount += 1;
+      byDay.set(day, d);
+
+      if (r.correlationId) {
+        byCorrelation.set(r.correlationId, (byCorrelation.get(r.correlationId) ?? 0) + 1);
+      }
+    }
+
+    const percentile = (xs: number[], p: number) => {
+      if (!xs.length) return null;
+      const sorted = [...xs].sort((a, b) => a - b);
+      const idx = Math.min(sorted.length - 1, Math.floor(((sorted.length - 1) * p) / 100));
+      return sorted[idx];
+    };
+
+    const byToolArr = Array.from(byTool.entries())
+      .map(([tool, v]) => ({
+        tool,
+        count: v.count,
+        errorCount: v.errorCount,
+        errorRate: v.count > 0 ? v.errorCount / v.count : 0,
+        p50Ms: percentile(v.durations, 50),
+        p95Ms: percentile(v.durations, 95),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const byDayArr = Array.from(byDay.entries())
+      .map(([day, v]) => ({ day, count: v.count, errorCount: v.errorCount }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+
+    const topCorrelations = Array.from(byCorrelation.entries())
+      .map(([correlationId, count]) => ({ correlationId, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    return {
+      data: {
+        window: {
+          start: cutoff.toISOString(),
+          end: new Date().toISOString(),
+          days: q.daysBack,
+        },
+        totals: {
+          count: total,
+          errorCount,
+          errorRate: total > 0 ? errorCount / total : 0,
+        },
+        byTool: byToolArr,
+        bySource,
+        byDay: byDayArr,
+        topCorrelations,
+      },
+    };
   });
 
   // GET /agent/gapo-thread/:userId — back-compat wrapper over the new

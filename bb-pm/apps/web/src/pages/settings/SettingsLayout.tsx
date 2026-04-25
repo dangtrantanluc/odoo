@@ -1,17 +1,21 @@
 import { NavLink, Outlet, Navigate } from "react-router-dom";
-import { Users, Building2, Coins } from "lucide-react";
+import { Users, Building2, Coins, Activity } from "lucide-react";
 import { useAuth } from "@/features/auth/store";
 
 const tabs = [
   { to: "/settings/users", label: "Thành viên", icon: Users },
   { to: "/settings/company", label: "Công ty", icon: Building2 },
   { to: "/settings/currencies", label: "Tiền tệ", icon: Coins },
+  { to: "/settings/agent-audit", label: "Agent audit", icon: Activity },
 ];
 
 export function SettingsLayout() {
   const user = useAuth((s) => s.user);
-  const isAdmin = user?.role === "ADMIN" || user?.isSuperAdmin;
-  if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  // Agent audit is opened up to MANAGER too — they're the primary
+  // consumers of the audit dashboard for debugging follow-ups.
+  const canSeeSettings =
+    user?.role === "ADMIN" || user?.isSuperAdmin || user?.role === "MANAGER";
+  if (!canSeeSettings) return <Navigate to="/dashboard" replace />;
 
   return (
     <div className="p-6">

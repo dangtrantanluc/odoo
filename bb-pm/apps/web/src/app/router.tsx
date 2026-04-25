@@ -11,6 +11,7 @@ import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 import { UsersPage } from "@/pages/settings/UsersPage";
 import { CompanyPage } from "@/pages/settings/CompanyPage";
 import { CurrenciesPage } from "@/pages/settings/CurrenciesPage";
+import { AgentAuditPage } from "@/pages/settings/AgentAuditPage";
 import { TagsPage } from "@/pages/tags/TagsPage";
 import { CustomersPage } from "@/pages/customers/CustomersPage";
 import { AppShell } from "@/components/AppShell";
@@ -45,6 +46,7 @@ export function Router() {
                   <Route path="users" element={<UsersPage />} />
                   <Route path="company" element={<CompanyPage />} />
                   <Route path="currencies" element={<CurrenciesPage />} />
+                  <Route path="agent-audit" element={<AgentAuditPage />} />
                 </Route>
                 <Route path="/tags" element={<TagsPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
