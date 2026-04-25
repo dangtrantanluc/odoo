@@ -1,0 +1,45 @@
+**/node_modules
+**/dist
+**/.next
+**/.git
+**/.DS_Store
+**/*.log
+
+# Per-plugin build outputs — Dockerfile rebuilds them
+bb-pm-tools/dist/
+bb-pm-tools/node_modules/
+openclaw/openclaw/plugins/gapo-work/dist/
+openclaw/openclaw/plugins/gapo-work/node_modules/
+
+# Local env & secrets — must NOT be baked into image
+**/.env
+**/.env.local
+**/.env.*
+!**/.env.example
+**/config.json
+!docker/openclaw/**/*.json
+
+# Everything we don't need in image context
+.venv/
+.backup-config-*/
+.vscode/
+.claude/
+.agents/
+
+# bb-pm is a separate image; don't ship its source into openclaw context
+bb-pm/node_modules/
+bb-pm/apps/api/dist/
+bb-pm/apps/web/dist/
+bb-pm/apps/api/uploads/
+
+# Whole openclaw upstream tree isn't needed for plugin builds
+openclaw/openclaw/node_modules/
+openclaw/openclaw/dist/
+openclaw/openclaw/src/
+openclaw/openclaw/tests/
+openclaw/openclaw/scripts/
+openclaw/openclaw/ui/
+openclaw/openclaw/docs/
+openclaw/openclaw/packages/
+openclaw/openclaw/skills/
+openclaw/openclaw/CHANGELOG.md

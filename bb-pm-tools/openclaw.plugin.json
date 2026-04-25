@@ -1,0 +1,14 @@
+{
+  "id": "bb-pm-tools",
+  "enabledByDefault": false,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "webhookPath": {
+        "type": "string",
+        "default": "/api/plugins/gapo-work/webhook"
+      }
+    }
+  }
+}
