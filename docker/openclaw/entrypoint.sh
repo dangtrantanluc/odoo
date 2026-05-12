@@ -21,7 +21,7 @@ if [ ! -f "${CONFIG_FILE}" ]; then
   "gateway": {
     "port": 18789,
     "mode": "local",
-    "bind": "0.0.0.0",
+    "bind": "lan",
     "auth": {
       "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN:-change-me-$(date +%s)}"

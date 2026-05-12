@@ -27,6 +27,12 @@ function readEnvFile(p: string): Record<string, string> {
   return out;
 }
 
+// Eagerly load env at module-import time. JS hoists `import` statements,
+// so calling loadEnv() from index.ts after the imports is too late — by
+// then config.ts has already evaluated process.env. Importing this module
+// (which we do first in index.ts) has the side effect of populating env.
+let _loaded = false;
+
 export function loadEnv(): void {
   const candidates = [
     process.env.BROWSER_TOOLS_ENV,
@@ -34,13 +40,20 @@ export function loadEnv(): void {
     path.join(__dirname, "..", ".env"),
   ].filter(Boolean) as string[];
 
+  if (_loaded) return;
+  _loaded = true;
   for (const p of candidates) {
     const parsed = readEnvFile(p);
     if (Object.keys(parsed).length > 0) {
       for (const [k, v] of Object.entries(parsed)) {
         if (process.env[k] === undefined) process.env[k] = v;
       }
+      console.log(`[browser-tools] loaded env from ${p} (${Object.keys(parsed).length} keys)`);
       return;
     }
   }
+  console.warn(`[browser-tools] no .env found in candidates: ${candidates.join(", ")}`);
 }
+
+// Side-effect: load on first import. Place this AFTER loadEnv definition.
+loadEnv();

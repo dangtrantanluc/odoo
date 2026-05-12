@@ -1,5 +1,5 @@
 import fetch from "node-fetch";
-import { config } from "./config";
+import { config, LlmProviderName } from "./config";
 
 export type ChatMessage =
   | { role: "system" | "user" | "assistant"; content: string; tool_calls?: ToolCall[] }
@@ -11,17 +11,31 @@ export type ToolCall = {
   function: { name: string; arguments: string };
 };
 
+export type ChatUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
 export type ChatResponse = {
   content: string | null;
   tool_calls: ToolCall[];
   finish_reason: string;
+  usage?: ChatUsage;
+  latencyMs?: number;
+  provider?: LlmProviderName;
+  model?: string;
 };
 
 export type ChatOptions = {
   max_tokens?: number;
   temperature?: number;
   response_format?: { type: "json_object" | "text" };
+  // Per-call provider override. Default = config.llm.activeProvider.
+  provider?: LlmProviderName;
 };
+
+export type { LlmProviderName };
 
 // Retry transient LLM / network failures. The Qwen vllm server we use
 // sometimes returns 500 "EngineCore encountered an issue" then briefly
@@ -48,12 +62,23 @@ export async function chat(
   tools?: Array<{ type: "function"; function: { name: string; description: string; parameters: unknown } }>,
   options?: ChatOptions,
 ): Promise<ChatResponse> {
-  const url = `${config.llm.baseUrl.replace(/\/$/, "")}/chat/completions`;
+  const provider: LlmProviderName = options?.provider ?? config.llm.activeProvider;
+  const cfg = config.llm[provider];
+  if (!cfg) throw new Error(`Unknown LLM provider: ${provider}`);
+  if (provider === "gemini" && !cfg.apiKey) {
+    throw new Error("LLM provider 'gemini' missing GEMINI_API_KEY");
+  }
+  if (provider === "openrouter" && !cfg.apiKey) {
+    throw new Error("LLM provider 'openrouter' missing OPENROUTER_API_KEY");
+  }
+
+  const url = `${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`;
   const body: Record<string, unknown> = {
-    model: config.llm.model,
+    model: cfg.model,
     messages,
-    max_tokens: options?.max_tokens ?? config.llm.maxTokens,
-    temperature: options?.temperature ?? config.llm.temperature,
+    max_tokens: options?.max_tokens ?? cfg.maxTokens,
+    temperature: options?.temperature ?? cfg.temperature,
+    stream: false,
   };
   if (options?.response_format) body.response_format = options.response_format;
   if (tools?.length) {
@@ -65,13 +90,18 @@ export async function chat(
   let lastErr: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await chatOnce(url, payload);
+      const t0 = Date.now();
+      const resp = await chatOnce(url, payload, cfg.apiKey);
+      resp.latencyMs = Date.now() - t0;
+      resp.provider = provider;
+      resp.model = cfg.model;
+      return resp;
     } catch (err: any) {
       lastErr = err;
       if (attempt === MAX_RETRIES || !isRetryableError(err)) throw err;
       const delay = BACKOFF_MS * (attempt + 1);
       console.warn(
-        `[bb-pm-tools/llm] transient failure (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${err?.message || err}. Retrying in ${delay}ms...`,
+        `[bb-pm-tools/llm:${provider}] transient failure (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${err?.message || err}. Retrying in ${delay}ms...`,
       );
       await sleep(delay);
     }
@@ -79,12 +109,12 @@ export async function chat(
   throw lastErr;
 }
 
-async function chatOnce(url: string, payload: string): Promise<ChatResponse> {
+async function chatOnce(url: string, payload: string, apiKey: string): Promise<ChatResponse> {
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${config.llm.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: payload,
   });
@@ -102,5 +132,6 @@ async function chatOnce(url: string, payload: string): Promise<ChatResponse> {
     content: choice.message?.content ?? null,
     tool_calls: choice.message?.tool_calls ?? [],
     finish_reason: choice.finish_reason ?? "stop",
+    usage: json?.usage,
   };
 }

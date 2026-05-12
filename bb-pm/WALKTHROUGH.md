@@ -1,6 +1,6 @@
 # BB-PM Walkthrough
 
-Hướng dẫn setup dev từ đầu, migrate data từ Odoo, và chạy Sprint 1.
+Hướng dẫn setup dev từ đầu.
 
 ---
 
@@ -8,65 +8,47 @@ Hướng dẫn setup dev từ đầu, migrate data từ Odoo, và chạy Sprint 
 
 - **Docker** + **Docker Compose** v2
 - **Node.js 20+** và **pnpm 9+** (`npm i -g pnpm`)
-- Odoo stack hiện tại (`/home/bbsw/uchiha_itachi_36/odoo`) **đang chạy** — cần cho bước migrate
 
 ---
 
 ## 1. Khởi tạo monorepo
 
 ```bash
-cd /home/bbsw/uchiha_itachi_36/bb-pm
+cd /home/bbsw/pm/bb-pm
 pnpm install
 cp .env.example .env
-# chỉnh JWT_SECRET, POSTGRES_PASSWORD nếu muốn
+# chỉnh JWT_SECRET, POSTGRES_PASSWORD, AGENT_API_TOKEN nếu muốn
 ```
 
 ## 2. Khởi tạo DB
 
 ```bash
-# Khởi chạy Postgres riêng (port 5433 để không đụng Odoo 5432)
+# Khởi chạy Postgres :5433
 docker compose up bb_pm_db -d
 
-# Generate Prisma client & apply migration đầu tiên
-pnpm --filter @bb-pm/api prisma migrate dev --name init
+# Apply migrations (bao gồm agent_audit_log + task_blockers)
+pnpm --filter @bb-pm/api prisma migrate deploy
 
-# Seed: tạo company mặc định "BlueBolt", admin user, VND/USD
+# Seed: company mặc định "BlueBolt", admin, pm-agent service user, VND/USD
 pnpm --filter @bb-pm/api prisma db seed
 ```
 
 Sau bước này, login được với:
 - Email: `admin@bluebolt.local`
-- Password: `admin123` (đổi ngay sau khi login thật)
+- Password: `admin123` (đổi ngay sau login thật)
 
-## 3. Migrate data từ Odoo (optional)
+Agent service user (không login trực tiếp, chỉ qua `X-Agent-Token`):
+- Email: `pm-agent@bluebolt.local`
+- Role: `MANAGER`
 
-Yêu cầu: Odoo DB `odoo` đang sống trong container `project_management_db`.
-
-```bash
-# Từ máy host, expose Odoo DB qua network bb_pm (đã khai báo external: pm_network)
-docker network connect pm_network bb_pm_db || true
-
-# Chạy script migrate
-pnpm --filter @bb-pm/api migrate:odoo -- --reset   # --reset = truncate DB mới trước
-```
-
-Script sẽ:
-1. Đọc từ `postgres://admin:admin123@project_management_db:5432/odoo`.
-2. Map group Odoo → role `ADMIN/MANAGER/MEMBER/VIEWER`.
-3. Copy theo thứ tự: currencies → companies → users → customers → tags → projects → milestones → scopes → members → member_rates → tasks → backlogs → tag_rel → gapo_user_map.
-4. Recompute toàn bộ `totalCost/totalHours/completionPct`.
-5. Verify count 2 side, in report.
-
-> Note: mật khẩu Odoo nếu dùng passlib bcrypt sẽ không verify được bởi `bcrypt` Node. Script sẽ set tạm `changeme123` cho từng user migrate; user cần reset qua luồng "Forgot password" ở app mới.
-
-## 4. Chạy API + Web (dev)
+## 3. Chạy API + Web (dev)
 
 ```bash
-# Chạy song song cả hai bằng turborepo/concurrently
+# Chạy song song cả hai
 pnpm dev
 ```
 
-Hoặc chạy riêng từng service:
+Hoặc riêng:
 
 ```bash
 # Terminal 1
@@ -82,7 +64,7 @@ curl http://localhost:4000/api/v1/health
 # { "status":"ok","db":"ok","uptime":12 }
 ```
 
-## 5. Test luồng auth (Sprint 1)
+## 4. Test luồng auth
 
 **Register (public):**
 ```bash
@@ -105,7 +87,14 @@ TOKEN="eyJ..."
 curl http://localhost:4000/api/v1/me -H "authorization: Bearer $TOKEN"
 ```
 
-Trên browser: `http://localhost:5173` → form login/register → sau login sẽ vào placeholder Dashboard.
+## 5. Test agent endpoints (X-Agent-Token)
+
+```bash
+TOKEN="$(grep AGENT_API_TOKEN .env | cut -d= -f2)"
+curl -H "X-Agent-Token: $TOKEN" http://localhost:4000/api/v1/tasks/overdue
+curl -H "X-Agent-Token: $TOKEN" http://localhost:4000/api/v1/projects/digest
+curl -H "X-Agent-Token: $TOKEN" http://localhost:4000/api/v1/agent/audit?limit=10
+```
 
 ## 6. Chạy production (Docker)
 
@@ -113,7 +102,7 @@ Trên browser: `http://localhost:5173` → form login/register → sau login s�
 docker compose up -d --build
 # Web: http://localhost:5173
 # API: http://localhost:4000
-# DB:  localhost:5433  (user bbpm / pass ở .env)
+# DB:  localhost:5433
 ```
 
 Logs:
@@ -131,7 +120,7 @@ pnpm --filter @bb-pm/api prisma migrate dev --name add_something
 # Chỉ generate client (không tạo migration)
 pnpm --filter @bb-pm/api prisma generate
 
-# Mở Prisma Studio để xem/sửa data
+# Mở Prisma Studio
 pnpm --filter @bb-pm/api prisma studio
 ```
 
@@ -163,19 +152,19 @@ pnpm --filter @bb-pm/web test
 | `ECONNREFUSED 127.0.0.1:5433` | Chưa chạy `docker compose up bb_pm_db -d` |
 | Prisma client outdated | `pnpm --filter @bb-pm/api prisma generate` |
 | CORS error từ FE | Check `CORS_ORIGIN` trong `.env` của API |
-| Login fail sau migrate | Dùng "Forgot password" — password Odoo không tương thích |
+| `X-Agent-Token` 401 | Token trong bb-pm/.env khác bb-pm-tools/.env |
 | Port 4000/5173 bị chiếm | Sửa trong `docker-compose.yaml` hoặc `.env` |
 
-## 10. Cấu trúc file quan trọng — cheat sheet
+## 10. Cấu trúc file quan trọng
 
 | File | Mục đích |
 |---|---|
 | `apps/api/prisma/schema.prisma` | Nguồn sự thật cho DB |
 | `apps/api/prisma/seed.ts` | Dữ liệu khởi tạo |
-| `apps/api/prisma/migrate-from-odoo.ts` | Copy từ Odoo |
 | `apps/api/src/server.ts` | Fastify bootstrap, đăng ký plugin/route |
-| `apps/api/src/plugins/auth.ts` | JWT verify middleware |
+| `apps/api/src/plugins/auth.ts` | JWT + X-Agent-Token middleware |
 | `apps/api/src/modules/*/routes.ts` | REST endpoints |
+| `apps/api/src/modules/agent/routes.ts` | PM Agent endpoints (audit, gapo-thread) |
 | `apps/api/src/services/recompute.ts` | Rollup totals |
 | `apps/web/src/app/router.tsx` | SPA routes |
 | `apps/web/src/lib/apiClient.ts` | Axios wrapper + interceptor auto refresh |

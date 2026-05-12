@@ -1,12 +1,12 @@
 # BB Project Management (React + Node)
 
-Port của module Odoo `bb_project_management` sang SPA React + Fastify API, DB Postgres độc lập.
+SPA React + Fastify API + Postgres độc lập. Backend cho PM Operations Agent.
 
 **Quick start:**
 ```bash
 docker compose up bb_pm_db -d
 pnpm install
-pnpm --filter @bb-pm/api prisma migrate dev --name init
+pnpm --filter @bb-pm/api prisma migrate deploy
 pnpm --filter @bb-pm/api prisma db seed
 pnpm dev
 ```
@@ -19,4 +19,4 @@ Login mặc định: `admin@bluebolt.local` / `admin123`
 
 Xem:
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — thiết kế tổng thể
-- [WALKTHROUGH.md](./WALKTHROUGH.md) — step-by-step setup + migrate từ Odoo
+- [WALKTHROUGH.md](./WALKTHROUGH.md) — step-by-step setup

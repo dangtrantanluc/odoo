@@ -10,6 +10,58 @@ import type { AgentContext } from "./types";
 const MEMORY_RECALL_LIMIT = 3;
 const MEMORY_RECALL_DAYS = 30;
 
+// ─── Recent-turns in-memory cache (Sprint 8 follow-up) ──────────────────
+//
+// `summarizeAndStore` là fire-and-forget AFTER reply, nên DB chưa có summary
+// của turn N khi user gõ turn N+1 ngay sau. Cache last 2 turn raw in-memory
+// để recallMemoryContext có thể prepend vào prompt → user follow-up
+// ("ai làm vậy?", "task đó deadline khi nào?") hiểu được context.
+//
+// In-memory only — restart gateway = clear. OK cho dev + single-instance prod.
+// Multi-instance: cần Redis (defer until scale).
+
+type RecentTurn = { userText: string; replyText: string; ts: number };
+const RECENT_CAP_PER_CID = 2;
+const RECENT_TTL_MS = 30 * 60 * 1000; // 30 min — sau đó user chuyển topic, context cũ noise hơn
+const recentTurns = new Map<string, RecentTurn[]>();
+
+export function recordRecentTurn(
+  conversationId: string | undefined,
+  userText: string,
+  replyText: string,
+): void {
+  if (!conversationId) return;
+  const arr = recentTurns.get(conversationId) ?? [];
+  arr.push({ userText, replyText, ts: Date.now() });
+  // Cap + evict oldest
+  while (arr.length > RECENT_CAP_PER_CID) arr.shift();
+  recentTurns.set(conversationId, arr);
+}
+
+function getRecentTurnsBlock(conversationId: string | undefined): string {
+  if (!conversationId) return "";
+  const arr = recentTurns.get(conversationId);
+  if (!arr || arr.length === 0) return "";
+  // Filter stale
+  const now = Date.now();
+  const fresh = arr.filter((t) => now - t.ts < RECENT_TTL_MS);
+  if (fresh.length === 0) {
+    recentTurns.delete(conversationId);
+    return "";
+  }
+  if (fresh.length !== arr.length) recentTurns.set(conversationId, fresh);
+
+  const lines = fresh.map((t, i) => {
+    const u = truncate(t.userText, 200);
+    const r = truncate(t.replyText, 250);
+    return `[Turn -${fresh.length - i}] User: ${u}\n              Bot: ${r}`;
+  });
+  return [
+    "TURN GẦN ĐÂY (cùng conversation, để hiểu follow-up):",
+    ...lines,
+  ].join("\n");
+}
+
 /**
  * Fetch up to N recent summaries for the system prompt. Priority order:
  *   1. Same conversationId (stable thread) — always relevant regardless of wording.
@@ -46,7 +98,11 @@ export async function recallMemoryContext(
       }
     }
 
-    if (collected.size === 0) return "";
+    // Prepend recent in-memory turns (catch follow-up ngay sau, DB summary
+    // có thể chưa kịp ghi do summarizeAndStore async).
+    const recentBlock = getRecentTurnsBlock(ctx.conversationId);
+
+    if (collected.size === 0) return recentBlock;
 
     const ordered = Array.from(collected.values())
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
@@ -56,10 +112,11 @@ export async function recallMemoryContext(
       const when = new Date(m.createdAt).toISOString().slice(0, 16).replace("T", " ");
       return `[${i + 1}] (${when}) ${m.summary}`;
     });
-    return [
+    const dbBlock = [
       "BỐI CẢNH TRƯỚC ĐÓ (memory recall — dùng khi user hỏi kế thừa context):",
       ...lines,
     ].join("\n");
+    return recentBlock ? `${recentBlock}\n\n${dbBlock}` : dbBlock;
   } catch (err: any) {
     console.warn("[bb-pm-tools] memory recall failed:", err?.message || err);
     return "";
@@ -86,7 +143,7 @@ export async function summarizeAndStore(args: {
     if (!summary) return;
     await bbPm.postMemory({
       conversationId: args.ctx.conversationId ?? args.ctx.correlationId,
-      source: (args.ctx.source as any) ?? "chat",
+      source: (args.ctx.source === "eval" ? "other" : args.ctx.source) ?? "chat",
       userText: truncate(args.userText, 2000),
       replyText: truncate(args.replyText, 4000),
       summary: truncate(summary, 1000),

@@ -9,7 +9,7 @@ COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile || pnpm install
 
 FROM deps AS build
-ARG VITE_API_BASE=http://localhost:4000/api/v1
+ARG VITE_API_BASE=/api/v1
 ENV VITE_API_BASE=$VITE_API_BASE
 COPY . .
 RUN pnpm --filter @bb-pm/web build

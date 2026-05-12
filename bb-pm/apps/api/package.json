@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "dotenv -e ../../.env -- tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "tsx src/server.ts",
     "lint": "tsc --noEmit",
     "test": "DATABASE_URL=postgres://bbpm_test:bbpm_test_pwd@localhost:5434/bb_pm_test vitest run",
     "test:keep": "E2E_KEEP_CONTAINERS=1 DATABASE_URL=postgres://bbpm_test:bbpm_test_pwd@localhost:5434/bb_pm_test vitest run",
@@ -36,6 +36,7 @@
     "fastify-plugin": "^5.1.0",
     "fastify-type-provider-zod": "^4.0.2",
     "ioredis": "^5.4.1",
+    "node-sql-parser": "^5.4.0",
     "pg": "^8.13.1",
     "pino-pretty": "^11.3.0",
     "zod": "^3.23.8"

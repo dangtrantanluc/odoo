@@ -1,5 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import bcrypt from "bcrypt";
+import { mapGapoToRole, synthEmail, shouldUpgradeRole } from "./bulk-import";
 
 // Audit log — receives per-tool invocation records from bb-pm-tools
 // (OpenClaw PM Agent plugin). All entries are authenticated via the
@@ -186,6 +188,46 @@ const agentRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
+  // POST /agent/audit/cleanup — retention sweep. DELETE rows older than N days.
+  // Sprint 8 follow-up. Called by bb-pm-tools scheduler daily (env
+  // AUDIT_RETENTION_DAYS, default 90). Manual trigger cũng được — dùng cho
+  // dev cleanup khi DB grow nhanh.
+  //
+  // Returns { deletedCount, cutoff } cho audit/observability.
+  // Auth: X-Agent-Token (service user) HOẶC user role ADMIN.
+  //
+  // NOTE: với row count > 1M cần chuyển sang Postgres native partition (DROP
+  // PARTITION nhanh hơn DELETE). Với < 1M, indexed DELETE đủ tốt.
+  const cleanupBody = z.object({
+    days: z.coerce.number().int().positive().max(3650).optional().default(90),
+    dryRun: z.coerce.boolean().optional().default(false),
+  });
+  app.post("/audit/cleanup", { schema: { body: cleanupBody } }, async (req, reply) => {
+    const user = req.user;
+    // Only agent service user hoặc human ADMIN được call.
+    const isAgent = user.isAgent === true;
+    const isAdmin = user.role === "ADMIN";
+    if (!isAgent && !isAdmin) {
+      return reply.code(403).send({
+        error: { code: "FORBIDDEN", message: "Audit cleanup requires ADMIN or agent token" },
+      });
+    }
+    const { days, dryRun } = req.body as z.infer<typeof cleanupBody>;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    if (dryRun) {
+      const count = await app.prisma.agentAuditLog.count({
+        where: { createdAt: { lt: cutoff } },
+      });
+      return { data: { deletedCount: 0, wouldDelete: count, cutoff: cutoff.toISOString(), dryRun: true } };
+    }
+    const result = await app.prisma.agentAuditLog.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    return { data: { deletedCount: result.count, cutoff: cutoff.toISOString(), dryRun: false } };
+  });
+
   // GET /agent/gapo-thread/:userId — back-compat wrapper over the new
   // ChannelIdentity table. Returns the preferred Gapo identity (if any),
   // falling back to the legacy GapoUserMap row during the transition.
@@ -309,6 +351,213 @@ const agentRoutes: FastifyPluginAsync = async (app) => {
       },
     });
     return reply.code(201).send({ data: row });
+  });
+
+  // POST /agent/users/bulk-from-gapo — create/update bb-pm users + channel
+  // identities from a list of scraped Gapo Work members. Idempotent:
+  // re-running upserts.
+  const bulkBody = z.object({
+    members: z.array(z.object({
+      name: z.string().min(1).max(200),
+      workspace: z.string().max(100).optional().default(""),
+      department: z.string().max(100).optional().default(""),
+      position: z.string().max(200).optional().default(""),
+      conversationId: z.string().min(1).max(64),
+      // Explicit role override — wins over auto-mapping. Use for cases
+      // where Gapo position doesn't reflect actual responsibility (e.g.
+      // someone titled "AI Engineer" who is actually the team lead).
+      role: z.enum(["ADMIN", "MANAGER", "MEMBER", "VIEWER"]).optional(),
+    })),
+    dryRun: z.boolean().optional().default(false),
+  });
+  app.post("/users/bulk-from-gapo", { schema: { body: bulkBody } }, async (req, reply) => {
+    const b = req.body as z.infer<typeof bulkBody>;
+    if (
+      !req.user.isSuperAdmin &&
+      req.user.role !== "ADMIN" &&
+      req.user.role !== "MANAGER"
+    ) {
+      return reply.code(403).send({ error: { code: "FORBIDDEN" } });
+    }
+
+    const placeholderHash = await bcrypt.hash("disabled-gapo-import-" + Date.now(), 4);
+    const result = {
+      total: b.members.length,
+      created: 0,
+      updated: 0,
+      errors: [] as Array<{ name: string; error: string }>,
+      details: [] as Array<{ name: string; role: string; bbPmUserId: number; action: string }>,
+    };
+
+    for (const m of b.members) {
+      try {
+        const role = m.role ?? mapGapoToRole(m);
+        const email = synthEmail(m);
+
+        // Find existing user by either matching name OR our synthetic email
+        // OR an existing channel identity for this Gapo conversation id.
+        let user = await app.prisma.user.findFirst({
+          where: {
+            companyId: req.user.companyId,
+            OR: [
+              { email },
+              { fullName: m.name },
+            ],
+          },
+        });
+        const existingIdentity = await app.prisma.channelIdentity.findUnique({
+          where: { channel_externalId: { channel: "gapo", externalId: m.conversationId } },
+        });
+        if (existingIdentity && !user) {
+          user = await app.prisma.user.findUnique({ where: { id: existingIdentity.userId } });
+        }
+
+        let action: "created" | "updated";
+        if (b.dryRun) {
+          action = user ? "updated" : "created";
+        } else if (user) {
+          // Update name + role only if user record looks stale (don't clobber
+          // manually-set ADMIN/super roles).
+          await app.prisma.user.update({
+            where: { id: user.id },
+            data: {
+              fullName: m.name,
+              // Only upgrade role if current is lower; never downgrade ADMIN.
+              role: shouldUpgradeRole(user.role, role) ? role : user.role,
+              active: true,
+            },
+          });
+          action = "updated";
+        } else {
+          user = await app.prisma.user.create({
+            data: {
+              companyId: req.user.companyId,
+              email,
+              fullName: m.name,
+              role,
+              active: true,
+              passwordHash: placeholderHash,
+            },
+          });
+          action = "created";
+        }
+
+        if (!b.dryRun && user) {
+          // Upsert channel identity
+          await app.prisma.channelIdentity.upsert({
+            where: { channel_externalId: { channel: "gapo", externalId: m.conversationId } },
+            create: {
+              userId: user.id,
+              channel: "gapo",
+              externalId: m.conversationId,
+              externalName: m.name,
+              threadId: m.conversationId,
+              preferred: true,
+            },
+            update: {
+              userId: user.id,
+              externalName: m.name,
+              threadId: m.conversationId,
+              preferred: true,
+              lastSeenAt: new Date(),
+            },
+          });
+        }
+
+        if (action === "created") result.created++;
+        else result.updated++;
+        result.details.push({
+          name: m.name,
+          role,
+          bbPmUserId: user?.id ?? 0,
+          action,
+        });
+      } catch (err: any) {
+        result.errors.push({ name: m.name, error: err?.message ?? String(err) });
+      }
+    }
+
+    return reply.send({ data: result });
+  });
+
+  // GET /agent/users-workload?department=&role=&limit=
+  // Returns users + their open task count, ordered by workload ASC
+  // (least busy first). Used by the agent for task distribution.
+  const workloadQuery = z.object({
+    department: z.string().optional(),
+    role: z.enum(["ADMIN", "MANAGER", "MEMBER", "VIEWER"]).optional(),
+    limit: z.coerce.number().int().positive().max(100).optional().default(30),
+  });
+  app.get("/users-workload", { schema: { querystring: workloadQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof workloadQuery>;
+    // Raw SQL to LEFT JOIN + COUNT — Prisma's groupBy is awkward for this.
+    const rows = await app.prisma.$queryRawUnsafe<Array<{
+      id: number;
+      full_name: string;
+      role: string;
+      department: string | null;
+      position: string | null;
+      open_tasks: bigint;
+    }>>(`
+      SELECT u.id, u.full_name, u.role, u.department, u.position,
+             COUNT(t.id) FILTER (
+               WHERE t.status NOT IN ('DONE')
+             ) AS open_tasks
+      FROM users u
+      LEFT JOIN tasks t ON t.assignee_id = u.id
+      WHERE u.active = true
+        AND u.company_id = $1
+        ${q.department ? "AND u.department = $2" : ""}
+        ${q.role ? `AND u.role = $${q.department ? 3 : 2}` : ""}
+      GROUP BY u.id
+      ORDER BY open_tasks ASC, u.full_name ASC
+      LIMIT ${q.limit};
+    `, ...[req.user.companyId, q.department, q.role].filter(Boolean));
+
+    return {
+      data: rows.map(r => ({
+        id: r.id,
+        fullName: r.full_name,
+        role: r.role,
+        department: r.department,
+        position: r.position,
+        openTasks: Number(r.open_tasks),
+      })),
+    };
+  });
+
+  // GET /agent/user-by-channel?channel=gapo&externalId=<cid>
+  // Reverse lookup: given a Gapo conversation id, find the bb-pm user.
+  // Used by the watcher to attach caller identity to /agent/run payloads.
+  const userByChannelQuery = z.object({
+    channel: channelKindEnum,
+    externalId: z.string().min(1).max(256),
+  });
+  app.get("/user-by-channel", { schema: { querystring: userByChannelQuery } }, async (req, reply) => {
+    const q = req.query as z.infer<typeof userByChannelQuery>;
+    const identity = await app.prisma.channelIdentity.findUnique({
+      where: { channel_externalId: { channel: q.channel, externalId: q.externalId } },
+      include: {
+        user: {
+          select: {
+            id: true, email: true, fullName: true, role: true, active: true, companyId: true,
+          },
+        },
+      },
+    });
+    if (!identity) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+    if (!req.user.isSuperAdmin && identity.user.companyId !== req.user.companyId) {
+      return reply.code(403).send({ error: { code: "FORBIDDEN" } });
+    }
+    return reply.send({
+      data: {
+        user: identity.user,
+        channel: identity.channel,
+        externalId: identity.externalId,
+        externalName: identity.externalName,
+        threadId: identity.threadId,
+      },
+    });
   });
 
   app.delete("/channel-identity/:id", {

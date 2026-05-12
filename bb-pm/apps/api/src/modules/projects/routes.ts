@@ -13,6 +13,179 @@ const idParam = z.object({ id: z.coerce.number().int().positive() });
 const projectsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
 
+  // ── AGENT: WEEKLY REPORT (Sprint 4) ───────────────
+  // Richer rollup than /digest — adds activity deltas over a window
+  // (default 7 days): tasks done, blockers opened, backlog hours approved,
+  // upcoming deadlines. Used by generate_weekly_report tool.
+  const weeklyQuery = z.object({
+    days: z.coerce.number().int().positive().max(90).optional().default(7),
+    projectId: z.coerce.number().int().positive().optional(),
+  });
+  app.get("/weekly-report", { schema: { querystring: weeklyQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof weeklyQuery>;
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - q.days * 86_400_000);
+    const windowEnd = new Date(now.getTime() + q.days * 86_400_000);
+    const scope: any = req.user.isSuperAdmin ? {} : { companyId: req.user.companyId };
+    const projectWhere: any = { ...scope };
+    if (q.projectId) projectWhere.id = q.projectId;
+
+    const taskScope: any = { project: projectWhere };
+
+    const [projects, tasksDone, newBlockers, backlogsApproved, upcomingDeadlines, newTasks] =
+      await app.prisma.$transaction([
+        app.prisma.project.findMany({
+          where: { ...projectWhere, status: { in: ["PLANNED", "IN_PROGRESS"] } },
+          select: {
+            id: true, name: true, code: true, status: true, endDate: true,
+            taskCount: true, totalHours: true, totalCost: true,
+            _count: { select: { tasks: { where: { status: "DONE" } } } },
+          },
+          orderBy: [{ status: "asc" }, { endDate: "asc" }],
+        }),
+        app.prisma.task.count({
+          where: { ...taskScope, status: "DONE", updatedAt: { gte: windowStart } },
+        }),
+        app.prisma.taskBlocker.count({
+          where: {
+            createdAt: { gte: windowStart },
+            task: { project: projectWhere } as any,
+          },
+        }),
+        app.prisma.backlog.aggregate({
+          where: {
+            status: "APPROVED",
+            approvedAt: { gte: windowStart },
+            project: projectWhere,
+          },
+          _sum: { hours: true, totalCostSnapshot: true },
+          _count: true,
+        }),
+        app.prisma.task.findMany({
+          where: {
+            ...taskScope,
+            status: { not: "DONE" },
+            deadline: { gte: now, lte: windowEnd },
+          },
+          take: 20,
+          orderBy: { deadline: "asc" },
+          select: {
+            id: true, name: true, deadline: true, priority: true,
+            project: { select: { id: true, name: true, code: true } },
+            assignee: { select: { id: true, fullName: true } },
+          },
+        }),
+        app.prisma.task.count({
+          where: { ...taskScope, createdAt: { gte: windowStart } },
+        }),
+      ]);
+
+    return {
+      data: {
+        generatedAt: now.toISOString(),
+        window: { start: windowStart.toISOString(), end: now.toISOString(), days: q.days },
+        totals: {
+          activeProjects: projects.length,
+          newTasks,
+          tasksDone,
+          newBlockers,
+          backlogsApproved: backlogsApproved._count ?? 0,
+          hoursApproved: Number(backlogsApproved._sum.hours ?? 0),
+          costApproved: Number(backlogsApproved._sum.totalCostSnapshot ?? 0),
+        },
+        projects: projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          code: p.code,
+          status: p.status,
+          endDate: p.endDate,
+          taskCount: p.taskCount,
+          doneTaskCount: p._count.tasks,
+          completionPct: p.taskCount > 0
+            ? Math.round((100 * p._count.tasks) / p.taskCount)
+            : null,
+          totalHours: Number(p.totalHours),
+          totalCost: Number(p.totalCost),
+        })),
+        upcomingDeadlines: upcomingDeadlines.map((t) => ({
+          id: t.id,
+          name: t.name,
+          deadline: t.deadline,
+          priority: t.priority,
+          project: t.project,
+          assignee: t.assignee,
+        })),
+      },
+    };
+  });
+
+  // ── AGENT: DIGEST ─────────────────────────────────
+  // Cross-project rollup for daily digest. Company-scoped; returns active
+  // projects + global open/overdue/stale/unassigned counters.
+  app.get("/digest", async (req) => {
+    const scope: any = req.user.isSuperAdmin ? {} : { companyId: req.user.companyId };
+    const now = new Date();
+    const staleCutoff = new Date(now.getTime() - 7 * 86_400_000);
+
+    const activeProjects = await app.prisma.project.findMany({
+      where: { ...scope, status: { in: ["PLANNED", "IN_PROGRESS"] } },
+      select: {
+        id: true, name: true, code: true, status: true, endDate: true,
+        taskCount: true,
+        _count: { select: { tasks: { where: { status: "DONE" } } } },
+      },
+      orderBy: [{ status: "asc" }, { endDate: "asc" }],
+    });
+
+    const taskScope: any = { project: scope };
+    const [openTasks, overdueTasks, staleTasks, unassignedTasks] =
+      await app.prisma.$transaction([
+        app.prisma.task.count({ where: { ...taskScope, status: { not: "DONE" } } }),
+        app.prisma.task.count({
+          where: {
+            ...taskScope,
+            status: { not: "DONE" },
+            deadline: { not: null, lt: now },
+          },
+        }),
+        app.prisma.task.count({
+          where: {
+            ...taskScope,
+            status: { not: "DONE" },
+            updatedAt: { lt: staleCutoff },
+          },
+        }),
+        app.prisma.task.count({
+          where: { ...taskScope, status: { not: "DONE" }, assigneeId: null },
+        }),
+      ]);
+
+    return {
+      data: {
+        generatedAt: now.toISOString(),
+        totals: {
+          activeProjects: activeProjects.length,
+          openTasks,
+          overdueTasks,
+          staleTasks,
+          unassignedTasks,
+        },
+        projects: activeProjects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          code: p.code,
+          status: p.status,
+          endDate: p.endDate,
+          taskCount: p.taskCount,
+          doneTaskCount: p._count.tasks,
+          completionPct: p.taskCount > 0
+            ? Math.round((100 * p._count.tasks) / p.taskCount)
+            : null,
+        })),
+      },
+    };
+  });
+
   // ── LIST ──────────────────────────────────────────
   app.get("/", { schema: { querystring: projectListQuerySchema } }, async (req) => {
     const q = req.query as z.infer<typeof projectListQuerySchema>;

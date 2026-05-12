@@ -30,6 +30,9 @@ import companyAdminRoutes from "./modules/admin/company/routes.js";
 import currenciesRoutes from "./modules/admin/currencies/routes.js";
 import notificationsRoutes from "./modules/notifications/routes.js";
 import agentRoutes from "./modules/agent/routes.js";
+import reportQueryRoutes from "./modules/agent/report-query.js";
+import automationsRoutes from "./modules/agent/automations.js";
+import digestsRoutes from "./modules/agent/digests.js";
 import meetingsRoutes from "./modules/meetings/routes.js";
 
 async function bootstrap() {
@@ -137,6 +140,9 @@ async function bootstrap() {
   await app.register(currenciesRoutes, { prefix: "/api/v1/admin/currencies" });
   await app.register(notificationsRoutes, { prefix: "/api/v1/notifications" });
   await app.register(agentRoutes, { prefix: "/api/v1/agent" });
+  await app.register(reportQueryRoutes, { prefix: "/api/v1/agent/report" });
+  await app.register(automationsRoutes, { prefix: "/api/v1/agent/automations" });
+  await app.register(digestsRoutes, { prefix: "/api/v1/agent/digests" });
   await app.register(meetingsRoutes, { prefix: "/api/v1/meetings" });
 
   const port = Number(process.env.API_PORT ?? 4000);

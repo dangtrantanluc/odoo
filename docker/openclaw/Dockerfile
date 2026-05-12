@@ -64,4 +64,4 @@ ENV HOME=/root \
     OPENCLAW_GATEWAY_PORT=18789
 
 ENTRYPOINT ["/usr/local/bin/openclaw-entrypoint"]
-CMD ["openclaw", "gateway", "run", "--bind", "0.0.0.0", "--port", "18789", "--force"]
+CMD ["openclaw", "gateway", "run", "--bind", "lan", "--port", "18789", "--force"]

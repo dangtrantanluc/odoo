@@ -28,11 +28,12 @@ model Company {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  currency  Currency  @relation(fields: [currencyId], references: [id])
-  users     User[]
-  projects  Project[]
-  tasks     Task[]
-  backlogs  Backlog[]
+  currency    Currency     @relation(fields: [currencyId], references: [id])
+  users       User[]
+  projects    Project[]
+  tasks       Task[]
+  backlogs    Backlog[]
+  automations Automation[]
 
   @@map("companies")
 }
@@ -49,6 +50,10 @@ model User {
   companyId     Int       @map("company_id")
   active        Boolean   @default(true)
   isSuperAdmin  Boolean   @default(false) @map("is_super_admin")
+  // Org metadata — populated from Gapo profile via bulk-from-gapo.
+  // Used by the agent for workload-balanced task distribution + skill matching.
+  department    String?
+  position      String?
   lastLoginAt   DateTime? @map("last_login_at")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -66,6 +71,7 @@ model User {
   refreshTokens     RefreshToken[]
   notifications     Notification[]
   agentFollowUps    AgentFollowUp[]
+  ownedAutomations  Automation[]    @relation("AutomationOwner")
 
   @@index([companyId, active])
   @@map("users")
@@ -486,6 +492,9 @@ model AgentAuditLog {
 
   @@index([tool, createdAt])
   @@index([correlationId])
+  // Sprint 8 follow-up — standalone index on createdAt cho retention cleanup
+  // (DELETE WHERE created_at < cutoff). Tránh full scan khi xoá hàng tháng.
+  @@index([createdAt])
   @@map("agent_audit_log")
 }
 
@@ -625,4 +634,32 @@ model MeetingActionItem {
 
   @@index([meetingId, status])
   @@map("meeting_action_items")
+}
+
+// Phase 4 — recurring workflow registration. Replaces hardcoded cron env
+// (CRON_DAILY_DIGEST_TARGET) với DB-backed config. Scheduler load on boot
+// + register node-cron jobs per row.
+model Automation {
+  id             Int       @id @default(autoincrement())
+  name           String                                       // human-readable label
+  workflow       String                                       // workflows registry key (vd "daily_digest")
+  schedule       String                                       // cron expression (vd "0 9 * * *")
+  inputs         Json      @default("{}")                     // workflow-specific args
+  target         String?                                      // optional Gapo cid (vd "collab:7001...")
+  active         Boolean   @default(true)
+  ownerId        Int       @map("owner_id")
+  companyId      Int       @map("company_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt      @map("updated_at")
+  lastRunAt      DateTime? @map("last_run_at")
+  lastRunStatus  String?   @map("last_run_status")            // "ok" | "error"
+  lastRunError   String?   @map("last_run_error")             // truncated error msg
+  consecutiveFails Int     @default(0) @map("consecutive_fails")  // dead-man switch
+
+  owner   User    @relation("AutomationOwner", fields: [ownerId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([active, schedule])
+  @@index([companyId, active])
+  @@map("automations")
 }

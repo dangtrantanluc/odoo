@@ -4,96 +4,188 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an **Odoo 17.0** deployment for BBSW (a Vietnamese company) with a custom module for income/expense management ("Thu Chi"). The project uses Docker Compose to run Odoo + PostgreSQL.
+**PM Operations Agent** — AI agent tự động hoá công việc Project Manager hàng ngày cho BlueBolt (Vietnamese company). 3-layer kiến trúc HTTP-boundary:
 
-## Running the Stack
+1. **Channels** (gapo-work plugin) — adapter thuần cho Gapo Work bot. Không có PM logic.
+2. **OpenClaw orchestrator** (bb-pm-tools plugin) — ReAct loop, LLM tool-calling (Qwen self-hosted), cron scheduler, follow-up cooldown.
+3. **bb-pm API** (Fastify + Prisma + Postgres) — source of truth cho projects/tasks/backlogs/audit.
+
+Chi tiết spec: [PMOperationsAgent.md](./PMOperationsAgent.md) · Trạng thái sprint: [PROCESS.md](./PROCESS.md) · Vận hành/troubleshoot: [RUNBOOK.md](./RUNBOOK.md)
+
+## Repo layout
+
+```
+/home/bbsw/pm/
+├── bb-pm/                         # Fastify API + React SPA (source of truth)
+│   ├── apps/api/                  # Fastify + Prisma
+│   ├── apps/web/                  # React SPA
+│   ├── packages/shared/           # Zod schemas share FE↔BE
+│   ├── docker-compose.yaml        # Postgres :5433 + API + Web
+│   └── ARCHITECTURE.md · WALKTHROUGH.md
+├── bb-pm-tools/                   # OpenClaw plugin — PM agent orchestrator
+│   └── src/ (config|env|tools|orchestrator|cooldown|scheduler|channel-out)
+├── openclaw/openclaw/             # OpenClaw gateway submodule
+│   └── plugins/gapo-work/         # OpenClaw plugin — Gapo channel adapter
+├── skill/                         # Agent role prompt cards (PO, SA, FE, BE, ...)
+├── PMOperationsAgent.md           # Spec gốc — kiến trúc 3-layer, 8 flow, 6 sprint
+├── PROCESS.md                     # Progress tracker + changelog
+└── CLAUDE.md                      # File này
+```
+
+**Runtime config files** (ngoài repo, không commit):
+- `~/.openclaw/openclaw.json` — OpenClaw gateway config (plugin entries, LLM provider)
+- `~/.openclaw/plugins/gapo-work/config.json` — Gapo bot token, sendToken, orchestrator URL
+- `~/.openclaw/plugins/bb-pm-tools/.env` — bb-pm API token, LLM, GAPO_SEND_TOKEN
+
+## Running the stack
+
+### Postgres + bb-pm API
 
 ```bash
-# Start all services
-docker compose up -d
+cd /home/bbsw/pm/bb-pm
 
-# View logs
-docker compose logs -f web
+# Start Postgres :5433
+docker compose up bb_pm_db -d
 
-# Restart Odoo (e.g., after module changes)
-docker compose restart web
+# Apply migrations + seed (idempotent)
+pnpm --filter @bb-pm/api prisma migrate deploy
+pnpm --filter @bb-pm/api prisma db seed
 
-# Stop everything
-docker compose down
+# Start API :4000 (dev watch)
+pnpm --filter @bb-pm/api dev
+
+# Health check
+curl http://localhost:4000/api/v1/health
 ```
 
-- Odoo web UI: http://localhost:8069
-- Active database: **`bb_test_db`** (configured via `-d bb_test_db` in docker-compose.yaml `command:`)
-- PostgreSQL: localhost:5432 (user: admin, password: admin123)
-- Custom homepage route: `/project/home` (requires login, auto-redirects after login)
-
-> **Note:** The `project_management` database exists but has a broken schema — do not use it. The working database is `bb_test_db`.
-
-## Installing / Updating the Custom Module
-
-After making changes to `project_addons/bbsw_thuchi`:
+### OpenClaw gateway + plugins
 
 ```bash
-docker compose exec web odoo -d bb_test_db --db_host db --db_user admin --db_password admin123 \
-  --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
-  -u bbsw_thuchi --stop-after-init
+# Build plugins sau khi sửa code
+cd /home/bbsw/pm/bb-pm-tools && node node_modules/typescript/bin/tsc
+cd /home/bbsw/pm/openclaw/openclaw/plugins/gapo-work && node node_modules/typescript/bin/tsc
+
+# Reload plugin (link mode — không copy)
+openclaw plugins install --dangerously-force-unsafe-install --link /home/bbsw/pm/bb-pm-tools
+rm -rf ~/.openclaw/extensions/gapo-work
+openclaw plugins install --link /home/bbsw/pm/openclaw/openclaw/plugins/gapo-work
+
+# Restart gateway
+openclaw gateway stop && sleep 2 && openclaw gateway start
+openclaw gateway status
+
+# Logs
+journalctl --user -u openclaw-gateway -n 100 --no-pager
 ```
 
-Then restart: `docker compose up -d`
-
-For static files (CSS/JS), a plain restart is sufficient — no module update needed.
-
-## Linting
-
-The `odoo/ruff.toml` contains Odoo's official ruff config. To lint the custom module Python files:
+### Smoke test end-to-end
 
 ```bash
-cd /home/bbsw/odoo/odoo
-ruff check ../project_addons/bbsw_thuchi
+TOKEN=$(grep AGENT_API_TOKEN /home/bbsw/pm/bb-pm/.env | cut -d= -f2)
+
+# Direct bb-pm API
+curl -H "X-Agent-Token: $TOKEN" http://localhost:4000/api/v1/tasks/overdue
+curl -H "X-Agent-Token: $TOKEN" http://localhost:4000/api/v1/projects/digest
+
+# Qua OpenClaw gateway → LLM → tool → bb-pm API → reply
+curl -X POST http://localhost:18789/api/plugins/bb-pm/agent/run \
+  -H "Content-Type: application/json" \
+  -d '{"text":"task nào đang quá hạn?","source":"cli"}'
+
+# Gapo inbound simulation
+curl -X POST http://localhost:18789/api/plugins/gapo-work/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"message":{"text":"[GAPO_USER: pm] hygiene check","user":{"name":"pm"},"thread":{"id":"TEST"}}}'
 ```
 
-## Architecture
+## Kiến trúc chi tiết
 
-### Directory Structure
+### bb-pm API (Fastify + Prisma)
 
-```
-/home/bbsw/odoo/
-├── docker-compose.yaml          # Orchestrates db (postgres:16) + web (odoo:17.0)
-├── init/                        # SQL scripts run at DB init (postgres entrypoint)
-├── odoo/                        # Full Odoo 17 community source (reference + ruff config)
-├── project_addons/              # Mounted as /mnt/extra-addons in container
-│   └── bbsw_thuchi/             # The custom Odoo module
-└── redesign/                    # Static HTML/CSS/JS prototype of the homepage UI
-```
+- Auth: JWT (web) HOẶC `X-Agent-Token` header (plugin). Service user `pm-agent@bluebolt.local` MANAGER.
+- 18+ module REST: projects, tasks, backlogs, members, milestones, rates, scopes, tags, customers, uploads, dashboard, notifications, admin, auth, users, **agent** (audit + gapo-thread + memory + follow-up + **report SQL gateway** + **automations**).
+- Schema: 15 bảng domain + `AgentAuditLog` + `TaskBlocker` + `AgentMemory` + `AgentFollowUp` + `Automation` + enum `AgentAuditSource`, `BlockerSeverity`, `FollowUpStatus`.
+- Agent-specific endpoints: `/tasks/overdue`, `/tasks/stale`, `/tasks/hygiene`, `/tasks/:id/blocker`, `/projects/digest`, `/agent/audit`, `/agent/gapo-thread/:userId`, **`/agent/report/query` (Sprint 7 SQL gateway)**, **`/agent/report/schema` (DMMF→md)**, **`/agent/automations` (CRUD)**.
+- Company-scoped: mọi query tự động `WHERE companyId = req.user.companyId` trừ super-admin.
 
-### Custom Module: `bbsw_thuchi`
+#### Sprint 7 — Read SQL gateway
 
-Located in `project_addons/bbsw_thuchi/`. Depends on: `base`, `mail`, `hr`, `hr_attendance`.
+- `POST /agent/report/query` accept `{sql}` raw SELECT. Defense pyramid: AST guard (node-sql-parser, reject DML/system tables/multi-statement) → company_id scope must-have-WHERE → LIMIT cap 1000 → `SET statement_timeout=5s` → execute via `bb_pm_readonly` Postgres role (column-level grant on users excluding password_hash, table-level revoke on refresh_tokens) → result sanitize (regex strip secret cols).
+- `GET /agent/report/schema` trả markdown DB schema (8KB, generated từ Prisma DMMF) cho LLM viết SQL chính xác (snake_case columns, enum values, common patterns).
 
-> **Important:** `website` and `hr_payroll` are intentionally excluded — `hr_payroll` is Enterprise-only and `website` was broken in the active DB. The homepage template is a **standalone HTML page** (not using `website.layout`), and the controller uses `auth='user'` without `website=True`.
+### bb-pm-tools plugin (OpenClaw orchestrator)
 
-**Models:**
-- `bbsw.thuchi.category` — Income/Expense categories with `type` field (`thu`/`chi`)
-- `bbsw.thuchi.record` — Individual transaction records with state machine (`draft` ↔ `confirmed` / `cancelled`), inherits `mail.thread` for chatter. `amount` must be > 0.
-- `bbsw.home.app` — Configurable launcher tiles on the homepage; each has `name`, `url`, `icon` (selection), `gradient` (selection), `sequence`, `active`, and optional `groups_id` for access control. Default tiles seeded from `data/default_apps.xml`.
+- Endpoint: `POST /api/plugins/bb-pm/agent/run` (channel-agnostic, nhận `{text, correlationId?, source?}` → `{reply}`).
+- LLM: multi-provider — `default` (Qwen self-host) + `gemini` (OpenAI-compat endpoint). Switch global qua `LLM_PROVIDER` env, per-call qua `chat(messages, tools, {provider})`.
+- ReAct loop trong `orchestrator.ts` — tối đa 10 bước tool call (env `AGENT_MAX_STEPS`).
+- **38 tools** (Sprint 7): 27 legacy + 8 v2 namespace (`task.*`/`project.*`/`message.send`/`follow_up.update`/`gapo.find_user`) + 1 `report.query` (NL→SQL inner LLM hoặc raw SQL escape) + 4 automation (`automation.create`/`list`/`delete`, `workflow.run`).
+- System prompt 2 mode: v1 (default) hoặc v2 3-mode dispatcher (READ/ACTION/AUTOMATION). Switch qua `BB_PM_PROMPT_VERSION=v2`.
+- Cron scheduler 2 nguồn: legacy env-based (CRON_DAILY_DIGEST_TARGET) + DB-backed Automation table với 60s poll loop hot-register/unregister.
+- Workflows registry (`src/workflows/registry.ts`): `daily_digest`, `weekly_report`, `hygiene_check` — pure functions composable với cron + `workflow.run` tool.
+- Cooldown 24h Redis (fallback in-memory) cho `send_follow_up`.
+- Mọi tool call ghi vào `/agent/audit` (fire-and-forget). Eval: `pnpm eval` với golden set `test/golden-eval.json` (26 case across 5 category).
 
-**Key constraint:** `category_id` domain is filtered by `type` — a "thu" record can only use "thu" categories. This is enforced via `@api.onchange` and the domain in the view.
+### gapo-work plugin (channel adapter)
 
-**Controller:** `controllers/main.py` — two routes:
-- `/project/home` — renders the app-switcher dashboard (`bbsw_thuchi.project_homepage_template`)
-- `/` — redirects to `/project/home` (overrides Odoo's default root)
-- Also overrides `_login_redirect` so after login users land on `/project/home`
+- Inbound: `POST /api/plugins/gapo-work/webhook` — parse Gapo payload, forward HTTP → bb-pm-tools `/agent/run`, ack 200 ngay, gửi reply về Gapo async.
+- Outbound: `POST /api/plugins/gapo-work/send` — yêu cầu header `X-Plugin-Token` (shared secret), body `{conversationId, text}`. Gửi qua Gapo bot API.
+- `conversationId` parse prefix (Sprint 7 fix): `dm:<int>` → `receiver_id` field, `collab:<int>` → `collab_id` field, `<int>` → `thread_id` (legacy passthrough). Sai prefix → throw error rõ ràng thay vì send rác cho Gapo.
+- **Không chứa PM logic**, không gọi DB, không gọi LLM. Gapo credentials chỉ sống ở đây.
 
-**Frontend assets** (`static/src/`):
-- `thuchi_homepage.css` / `thuchi_homepage.js` — referenced directly in the standalone template (not via Odoo asset bundles)
-- Bootstrap 5.3 loaded from CDN in the template
-- The `redesign/` folder is a standalone HTML prototype (not served by Odoo) used as a design reference
+## Quy ước code
 
-### Odoo Module Conventions (this version)
+### bb-pm API (Fastify + Prisma + Zod)
 
-- Views use `<tree>` (not `<list>`) in arch XML — this build of Odoo 17 does not accept `list` as `ir.ui.view.type`
-- `view_mode` in actions uses `tree,form` (not `list,form`) for the same reason
-- Views are XML in `views/` — tree, form, search, and menu definitions
-- Access rights in `security/ir.model.access.csv` — currently all authenticated users have full CRUD on all models
-- `__manifest__.py` declares dependencies and data files loaded in order (no `assets` key — CSS/JS linked directly in template)
-- The module version is `17.0.2.0.0`
+- Response shape: `{ data, meta: {page, pageSize, total} }` hoặc `{ error: {code, message, details} }`.
+- Validation: Zod schema share FE↔BE qua `packages/shared`.
+- State transition: `POST /:resource/:id/transition {status}` — server validate allowed.
+- Scope check: `companyId` trong `req.user`, super-admin bỏ qua.
+- Auth hook: `app.addHook("preHandler", app.authenticate)` ở đầu mỗi routes module.
+- Agent endpoint: cùng route file (tasks, projects, agent) — auth plugin xử lý X-Agent-Token transparently.
+
+### OpenClaw plugins (TypeScript)
+
+- Plugin entry: `register(api)` export default. Gọi `api.registerHttpRoute({path, auth, match, handler})` để đăng ký route.
+- Handler signature: `(req: IncomingMessage, res: ServerResponse) => Promise<boolean>` (raw Node, không Express).
+- Env loader: không dùng dotenv — plugin tự parse `.env` theo thứ tự: env var `<PLUGIN>_ENV` → `~/.openclaw/plugins/<id>/.env` → plugin source dir.
+- Build: `node node_modules/typescript/bin/tsc` (tránh `pnpm build` vì `tsc` trong `.bin` có permission issue trên setup này).
+- Install với `--link` khi dev (không copy), `--dangerously-force-unsafe-install` nếu dùng env+fetch (OpenClaw scanner false positive).
+
+### Secret segregation
+
+- **gapo-work**: `GAPO_BOT_TOKEN`, `sendToken` (shared với bb-pm-tools)
+- **bb-pm-tools**: `BB_PM_AGENT_TOKEN`, `LLM_API_KEY`, `GAPO_SEND_TOKEN` (shared với gapo-work)
+- **bb-pm API**: `AGENT_API_TOKEN` (match `BB_PM_AGENT_TOKEN`), `JWT_SECRET`, DB creds
+- Không có secret nào lộ sang layer khác. Shared secrets (2 chiều) được generate 1 lần.
+
+## Conventions
+
+- **Markdown:** tiếng Việt cho docs, comment, prompt LLM — team nội bộ.
+- **Code identifiers:** tiếng Anh.
+- **File paths trong doc:** relative-to-repo-root (vd `bb-pm/apps/api/src/...`), không absolute.
+- **LLM system prompt:** nguyên tắc 9 điểm trong `bb-pm-tools/src/orchestrator.ts` — không tự ý follow-up khi user chỉ hỏi, không tự đổi status, luôn trả "0 task" rõ ràng thay vì bịa.
+- **Không commit secret:** `.env`, `config.json` có token thật đều trong `.gitignore`. Example files dùng placeholder.
+
+## Common tasks
+
+**Thêm tool mới cho agent:**
+1. Implement handler trong `bb-pm-tools/src/tools.ts` (push vào array + update `toolsByName` auto-computed).
+2. Nếu cần endpoint mới ở bb-pm API: add vào routes module tương ứng.
+3. Thêm API-client method trong `bb-pm-tools/src/api-client.ts`.
+4. Update system prompt trong `orchestrator.ts` nếu tool cần hướng dẫn đặc biệt.
+5. Build + reload plugin + restart gateway.
+
+**Thêm bảng mới vào bb-pm DB:**
+1. Sửa `bb-pm/apps/api/prisma/schema.prisma`.
+2. `pnpm --filter @bb-pm/api prisma migrate dev --name <desc>`.
+3. `pnpm --filter @bb-pm/api prisma generate` để TypeScript client update.
+4. Tạo routes module trong `src/modules/<name>/routes.ts` + register trong `server.ts`.
+
+**Rotate agent token:**
+1. `openssl rand -hex 32` → copy value.
+2. Update 3 chỗ sync: `bb-pm/.env` (`AGENT_API_TOKEN`), `bb-pm-tools/.env` (`BB_PM_AGENT_TOKEN`), `~/.openclaw/plugins/bb-pm-tools/.env` (`BB_PM_AGENT_TOKEN`).
+3. Restart bb-pm API + OpenClaw gateway.
+
+## Status
+
+Xem [PROCESS.md](./PROCESS.md) cho trạng thái sprint chi tiết + smoke test log. **Sprint 1–7 done** (Phase 1.2 NL→SQL partial, Phase 6 cleanup deferred). Production stack: gateway + bb-pm API + Postgres readonly role + DB-backed automation registry với hot register.

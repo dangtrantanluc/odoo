@@ -10,8 +10,7 @@
     "db:up": "docker compose up bb_pm_db -d",
     "db:migrate": "pnpm --filter @bb-pm/api prisma migrate dev",
     "db:seed": "pnpm --filter @bb-pm/api prisma db seed",
-    "db:reset": "pnpm --filter @bb-pm/api prisma migrate reset",
-    "migrate:odoo": "pnpm --filter @bb-pm/api migrate:odoo"
+    "db:reset": "pnpm --filter @bb-pm/api prisma migrate reset"
   },
   "devDependencies": {
     "concurrently": "^9.0.1",

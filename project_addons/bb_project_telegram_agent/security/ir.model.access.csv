@@ -1,8 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_bb_project_telegram_link_admin,bb.project.telegram.link admin,model_bb_project_telegram_link,bb_project_management.group_bb_pm_admin,1,1,1,1
-access_bb_project_telegram_link_manager,bb.project.telegram.link manager,model_bb_project_telegram_link,bb_project_management.group_bb_pm_manager,1,1,1,0
-
-access_bb_project_telegram_session_admin,bb.project.telegram.session admin,model_bb_project_telegram_session,bb_project_management.group_bb_pm_admin,1,1,1,1
-
-access_bb_project_telegram_message_log_admin,bb.project.telegram.message.log admin,model_bb_project_telegram_message_log,bb_project_management.group_bb_pm_admin,1,1,1,1
-access_bb_project_telegram_message_log_manager,bb.project.telegram.message.log manager,model_bb_project_telegram_message_log,bb_project_management.group_bb_pm_manager,1,0,0,0

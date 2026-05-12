@@ -83,6 +83,37 @@ async function main() {
       companyId: company.id,
     },
   });
+  // PM Agent service user — authenticated via X-Agent-Token, never via JWT.
+  // passwordHash is a random bcrypt that nobody holds the plaintext of.
+  const agentPwd = await bcrypt.hash(`agent-no-login-${Date.now()}`, 10);
+  await prisma.user.upsert({
+    where: { email: process.env.AGENT_USER_EMAIL ?? "pm-agent@bluebolt.local" },
+    update: {},
+    create: {
+      email: process.env.AGENT_USER_EMAIL ?? "pm-agent@bluebolt.local",
+      passwordHash: agentPwd,
+      fullName: "PM Agent",
+      role: "MANAGER",
+      companyId: company.id,
+    },
+  });
+
+  // Sprint 6 — demo ChannelIdentity so send_follow_up tool has routable threads.
+  // Real deployment: seed from HR sync or admin CRUD.
+  for (const id of [
+    { userId: dev1.id, channel: "gapo" as const, externalId: "demo-dev1-gapo",
+      externalName: "Nguyen Van A", threadId: "demo-thread-dev1", preferred: true },
+    { userId: dev2.id, channel: "gapo" as const, externalId: "demo-dev2-gapo",
+      externalName: "Tran Thi B",   threadId: "demo-thread-dev2", preferred: true },
+    { userId: pm.id,   channel: "email" as const, externalId: "pm@bluebolt.local",
+      externalName: "Project Manager", preferred: true },
+  ]) {
+    await prisma.channelIdentity.upsert({
+      where: { channel_externalId: { channel: id.channel, externalId: id.externalId } },
+      create: id,
+      update: id,
+    });
+  }
 
   // ── Customers ───────────────────────────────────────
   const acme = await upsertCustomer("ACME Corp", "contact@acme.test");

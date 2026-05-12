@@ -13,7 +13,12 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsc --watch",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "bench": "tsx src/bench-llm.ts",
+    "eval": "tsx src/eval-runner.ts",
+    "test": "tsx test/formatter.test.ts && tsx test/pre-classifier.test.ts",
+    "test:formatter": "tsx test/formatter.test.ts",
+    "test:pre-classifier": "tsx test/pre-classifier.test.ts"
   },
   "dependencies": {
     "ioredis": "^5.4.1",

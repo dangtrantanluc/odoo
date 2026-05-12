@@ -8,6 +8,8 @@ export type AuthUser = {
   role: Role;
   companyId: number;
   isSuperAdmin: boolean;
+  // true when request was authenticated via X-Agent-Token instead of JWT.
+  isAgent?: boolean;
 };
 
 declare module "fastify" {
@@ -24,8 +26,56 @@ declare module "@fastify/jwt" {
   }
 }
 
+// Cache the PM agent service user so /agent/* routes don't hit the DB on
+// every request. Invalidated on process restart only — token rotation
+// therefore requires a restart, which is fine.
+let cachedAgentUser: AuthUser | null = null;
+
+async function resolveAgentUser(app: any): Promise<AuthUser | null> {
+  if (cachedAgentUser) return cachedAgentUser;
+  const email = process.env.AGENT_USER_EMAIL ?? "pm-agent@bluebolt.local";
+  const row = await app.prisma.user.findUnique({ where: { email } });
+  if (!row) return null;
+  cachedAgentUser = {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    companyId: row.companyId,
+    isSuperAdmin: row.isSuperAdmin,
+    isAgent: true,
+  };
+  return cachedAgentUser;
+}
+
 const authPlugin: FastifyPluginAsync = async (app) => {
   app.decorate("authenticate", async (req: FastifyRequest, reply: FastifyReply) => {
+    // ── X-Agent-Token path ─────────────────────────────────────────────
+    // Used by bb-pm-tools (OpenClaw plugin) to authenticate as the
+    // pm-agent service user. Bypasses JWT entirely.
+    const agentToken = req.headers["x-agent-token"];
+    if (typeof agentToken === "string" && agentToken.length > 0) {
+      const expected = process.env.AGENT_API_TOKEN ?? "";
+      if (!expected) {
+        return reply.code(503).send({
+          error: { code: "AGENT_NOT_CONFIGURED", message: "AGENT_API_TOKEN not set on server" },
+        });
+      }
+      if (agentToken !== expected) {
+        return reply.code(401).send({
+          error: { code: "UNAUTHORIZED", message: "Invalid agent token" },
+        });
+      }
+      const user = await resolveAgentUser(app);
+      if (!user) {
+        return reply.code(503).send({
+          error: { code: "AGENT_USER_MISSING", message: "pm-agent service user not seeded" },
+        });
+      }
+      (req as any).user = user;
+      return;
+    }
+
+    // ── JWT path (existing) ────────────────────────────────────────────
     try {
       const payload = await req.jwtVerify<{ sub: number; role: Role; companyId: number; isSuperAdmin: boolean; email: string }>();
       (req as any).user = {

@@ -10,11 +10,221 @@ import { isTaskTransitionAllowed } from "../../lib/transitions.js";
 import { recomputeMilestoneProgress } from "../../services/recompute.js";
 import { notify } from "../../services/notify.js";
 
+// ── Schemas for agent-oriented endpoints ───────────────────────────────
+const overdueQuery = z.object({
+  projectId: z.coerce.number().int().positive().optional(),
+  days: z.coerce.number().int().nonnegative().optional().default(0),
+  limit: z.coerce.number().int().positive().max(200).optional().default(50),
+});
+const staleQuery = z.object({
+  projectId: z.coerce.number().int().positive().optional(),
+  daysSinceUpdate: z.coerce.number().int().positive().optional().default(7),
+  limit: z.coerce.number().int().positive().max(200).optional().default(50),
+});
+const hygieneQuery = z.object({
+  projectId: z.coerce.number().int().positive().optional(),
+  staleDays: z.coerce.number().int().positive().optional().default(14),
+});
+const blockerBody = z.object({
+  description: z.string().min(3).max(2000),
+  severity: z.enum(["LOW", "MED", "HIGH"]).optional().default("MED"),
+});
+
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const projectIdParam = z.object({ projectId: z.coerce.number().int().positive() });
 
+// Company scope reused across agent endpoints (companyId from req.user, or
+// unrestricted for super-admin).
+function companyScope(req: any) {
+  return req.user.isSuperAdmin ? {} : { companyId: req.user.companyId };
+}
+
 const tasksRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
+
+  // ── AGENT: OVERDUE ────────────────────────────────
+  // Tasks whose deadline < today - `days`, status != DONE. Used by
+  // bb-pm-tools list_overdue_tasks.
+  app.get("/overdue", { schema: { querystring: overdueQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof overdueQuery>;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - q.days);
+    const where: any = {
+      status: { not: "DONE" },
+      deadline: { not: null, lt: cutoff },
+      project: companyScope(req),
+    };
+    if (q.projectId) where.projectId = q.projectId;
+
+    const [total, rows] = await app.prisma.$transaction([
+      app.prisma.task.count({ where }),
+      app.prisma.task.findMany({
+        where,
+        take: q.limit,
+        orderBy: [{ priority: "desc" }, { deadline: "asc" }],
+        include: {
+          project: { select: { id: true, name: true, code: true } },
+          assignee: { select: { id: true, fullName: true, email: true } },
+        },
+      }),
+    ]);
+
+    const now = Date.now();
+    return {
+      data: rows.map((t) => ({
+        id: t.id,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        deadline: t.deadline,
+        daysOverdue: t.deadline
+          ? Math.floor((now - new Date(t.deadline).getTime()) / 86_400_000)
+          : null,
+        project: t.project,
+        assignee: t.assignee,
+      })),
+      meta: { total, cutoff: cutoff.toISOString() },
+    };
+  });
+
+  // ── AGENT: STALE ──────────────────────────────────
+  // Tasks not updated for N days, status != DONE. Used by list_stale_tasks.
+  app.get("/stale", { schema: { querystring: staleQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof staleQuery>;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - q.daysSinceUpdate);
+    const where: any = {
+      status: { not: "DONE" },
+      updatedAt: { lt: cutoff },
+      project: companyScope(req),
+    };
+    if (q.projectId) where.projectId = q.projectId;
+
+    const [total, rows] = await app.prisma.$transaction([
+      app.prisma.task.count({ where }),
+      app.prisma.task.findMany({
+        where,
+        take: q.limit,
+        orderBy: [{ updatedAt: "asc" }],
+        include: {
+          project: { select: { id: true, name: true, code: true } },
+          assignee: { select: { id: true, fullName: true, email: true } },
+        },
+      }),
+    ]);
+    const now = Date.now();
+    return {
+      data: rows.map((t) => ({
+        id: t.id,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        updatedAt: t.updatedAt,
+        daysSinceUpdate: Math.floor((now - new Date(t.updatedAt).getTime()) / 86_400_000),
+        project: t.project,
+        assignee: t.assignee,
+      })),
+      meta: { total, cutoff: cutoff.toISOString() },
+    };
+  });
+
+  // ── AGENT: HYGIENE ────────────────────────────────
+  // Audit open tasks: missing owner / deadline / stale status.
+  app.get("/hygiene", { schema: { querystring: hygieneQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof hygieneQuery>;
+    const staleCutoff = new Date();
+    staleCutoff.setDate(staleCutoff.getDate() - q.staleDays);
+    const baseWhere: any = {
+      status: { not: "DONE" },
+      project: companyScope(req),
+    };
+    if (q.projectId) baseWhere.projectId = q.projectId;
+
+    const include = {
+      project: { select: { id: true, name: true, code: true } },
+      assignee: { select: { id: true, fullName: true, email: true } },
+    };
+
+    const [missingOwner, missingDeadline, staleStatus, total] =
+      await app.prisma.$transaction([
+        app.prisma.task.findMany({
+          where: { ...baseWhere, assigneeId: null },
+          include,
+          take: 100,
+          orderBy: { updatedAt: "desc" },
+        }),
+        app.prisma.task.findMany({
+          where: { ...baseWhere, deadline: null },
+          include,
+          take: 100,
+          orderBy: { updatedAt: "desc" },
+        }),
+        app.prisma.task.findMany({
+          where: { ...baseWhere, updatedAt: { lt: staleCutoff } },
+          include,
+          take: 100,
+          orderBy: { updatedAt: "asc" },
+        }),
+        app.prisma.task.count({ where: baseWhere }),
+      ]);
+
+    const simplify = (t: any) => ({
+      id: t.id,
+      name: t.name,
+      status: t.status,
+      project: t.project,
+      assignee: t.assignee,
+      deadline: t.deadline,
+      updatedAt: t.updatedAt,
+    });
+    return {
+      data: {
+        missingOwner: missingOwner.map(simplify),
+        missingDeadline: missingDeadline.map(simplify),
+        staleStatus: staleStatus.map(simplify),
+      },
+      meta: { total, staleCutoff: staleCutoff.toISOString() },
+    };
+  });
+
+  // ── AGENT: BLOCKER ────────────────────────────────
+  // Records a blocker against a task. Appends a severity-tagged entry to
+  // task.issues (human-readable history) AND creates a TaskBlocker row
+  // (structured history, future-resolvable). No status change — BLOCKED is
+  // not a TaskStatus value in this schema.
+  app.post("/:id/blocker", {
+    schema: { params: idParam, body: blockerBody },
+  }, async (req, reply) => {
+    const { id } = req.params as any;
+    const { description, severity } = req.body as z.infer<typeof blockerBody>;
+    const existing = await app.prisma.task.findFirst({
+      where: req.user.isSuperAdmin ? { id } : { id, project: { companyId: req.user.companyId } },
+    });
+    if (!existing) return reply.code(404).send({ error: { code: "TASK_NOT_FOUND" } });
+
+    const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
+    const newNote = `[${ts}] [${severity}] ${description}`;
+    const merged = existing.issues ? `${existing.issues}\n${newNote}` : newNote;
+
+    const [updated, blocker] = await app.prisma.$transaction([
+      app.prisma.task.update({
+        where: { id },
+        data: { issues: merged },
+      }),
+      app.prisma.taskBlocker.create({
+        data: { taskId: id, description, severity: severity as any },
+      }),
+    ]);
+
+    return reply.code(201).send({
+      data: {
+        taskId: updated.id,
+        blockerId: blocker.id,
+        severity: blocker.severity,
+        createdAt: blocker.createdAt,
+      },
+    });
+  });
 
   // ── LIST ──────────────────────────────────────────
   app.get("/", { schema: { querystring: taskListQuerySchema } }, async (req) => {
