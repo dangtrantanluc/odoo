@@ -1,0 +1,36 @@
+{
+  "name": "@openclaw/bb-pm-tools",
+  "version": "0.1.0",
+  "description": "PM Agent plugin for OpenClaw — tool contract + orchestrator over bb-pm API, fronted by Gapo Work channel",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsc --watch",
+    "cli": "tsx src/cli.ts",
+    "bench": "tsx src/bench-llm.ts",
+    "eval": "tsx src/eval-runner.ts",
+    "test": "tsx test/formatter.test.ts && tsx test/pre-classifier.test.ts",
+    "test:formatter": "tsx test/formatter.test.ts",
+    "test:pre-classifier": "tsx test/pre-classifier.test.ts"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1",
+    "node-cron": "^4.2.1",
+    "node-fetch": "^2.7.0",
+    "whatwg-url": "^16.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/node-fetch": "^2.6.11",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

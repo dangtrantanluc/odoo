@@ -1,0 +1,15 @@
+{
+  "app.title": "BB Project Management",
+  "nav.dashboard": "Dashboard",
+  "nav.projects": "Projects",
+  "nav.tasks": "Tasks",
+  "nav.backlogs": "Backlogs",
+  "nav.members": "Members",
+  "nav.tags": "Tags",
+  "auth.login": "Login",
+  "auth.register": "Register",
+  "auth.logout": "Logout",
+  "auth.email": "Email",
+  "auth.password": "Password",
+  "auth.fullName": "Full name"
+}

@@ -1,0 +1,49 @@
+Dưới đây là thông tin chi tiết và bản kế hoạch hoàn chỉnh nhất cho hệ thống quản lý dự án "BBSW x MTL Logistics" sau khi đã cập nhật thời gian bắt đầu vào tháng 5/2026:
+1. Khởi tạo Dự án (Bảng projects)
+
+    Tên dự án (name): BBSW x MTL Logistics Project.
+    Trạng thái (status): IN_PROGRESS.
+    Ngày bắt đầu (start_date): 01/05/2026 (Đã dời từ tháng 4 sang đầu tháng 5).
+    Ngày kết thúc dự kiến (end_date): 28/02/2027 (Bao gồm thời gian dự án và 4 tuần hỗ trợ Hypercare sau Go-live).
+
+2. Đội ngũ nhân sự (Bảng users và members) Hệ thống lưu trữ 3 thành viên chính tham gia vào dự án với thông tin vị trí và vai trò phân quyền:
+
+    Lưu Thị Phương Thảo: Vị trí (position): "BA" (Business Analyst) - Vai trò (role): MEMBER.
+    Trần Kỳ: Vị trí (position): "AI Engineer" - Vai trò (role): MEMBER.
+    Đặng Trần Tấn Lực: Vị trí (position): "AI Engineer" - Vai trò (role): MEMBER.
+
+3. Lộ trình triển khai (Bảng milestones) Các mốc thời gian đã được tịnh tiến 1 tháng, bao gồm 4 giai đoạn chính map trực tiếp với các Module của dự án:
+
+    Milestone 1: Giai đoạn 1 - Nền tảng + Sales + CS (Module 1, 2, 3).
+        Thời gian: Tuần 1 - 10 (Từ tháng 05/2026 đến giữa tháng 07/2026).
+    Milestone 2: Giai đoạn 2 - OP & Hải quan, Báo cáo & tự động hóa (Module 4, 5, 6).
+        Thời gian: Tuần 11 - 24 (Từ giữa tháng 07/2026 đến giữa tháng 10/2026).
+    Milestone 3: Giai đoạn 3 - Kế toán, tài chính & VAS (Module 7, 8).
+        Thời gian: Tuần 25 - 40 (Từ giữa tháng 10/2026 đến cuối tháng 01/2027).
+    Milestone 4: Go-Live & Hypercare Support.
+        Thời gian: Tháng 02/2027 (Hỗ trợ 4 tuần sau thời điểm go-live dự kiến 31/01/2027).
+
+4. Phân bổ Công việc (Bảng tasks) Tổng cộng 70 tính năng sẽ được chia thành các Task gán cho từng người (assignee_id) tương ứng với thời hạn (deadline) theo từng Milestone:
+A. Nhiệm vụ của Lưu Thị Phương Thảo (BA):
+
+    Hạn chót Tháng 07/2026 (Milestone 1): Phân tích và thiết kế vòng đời lô hàng logistics với 8 giai đoạn, quản lý đối tác, thiết lập quy trình luồng báo giá.
+    Hạn chót Tháng 10/2026 (Milestone 2): Xây dựng quy trình chứng từ HBL, HAWB, Manifest và chuẩn hóa quy trình khai báo hải quan (Customs Declaration Workflow).
+    Hạn chót Tháng 01/2027 (Milestone 3): Chuẩn hóa hệ thống tài khoản Kế toán theo VAS TT200, ánh xạ Hóa đơn AR/AP và thiết kế báo cáo tài chính.
+
+B. Nhiệm vụ của Trần Kỳ (AI Engineer):
+
+    Hạn chót Tháng 07/2026 (Milestone 1): Tích hợp AI Copilot để tự động điền thông tin đối tác từ tên miền và tự động soạn thảo nội dung báo giá qua Email/WhatsApp.
+    Hạn chót Tháng 10/2026 (Milestone 2): Xây dựng tính năng Nhận dạng tài liệu thông minh (OCR) để tự động trích xuất thông tin hàng hóa từ Packing List, SI vào lô hàng.
+    Hạn chót Tháng 01/2027 (Milestone 3): Tích hợp hệ thống Email tập trung có AI soạn thảo phản hồi, tự động hóa các Báo cáo doanh thu/KPI bằng ngôn ngữ tự nhiên (NL Queries). Tích hợp OCR đọc Debit Note của Agent và làm nổi bật phần sai lệch tự động.
+
+C. Nhiệm vụ của Đặng Trần Tấn Lực (AI Engineer):
+
+    Hạn chót Tháng 07/2026 (Milestone 1): Thiết lập AI Lead Scoring trong Module CRM để tự động đánh giá khách hàng và tạo bảng điều khiển truy vấn dữ liệu bằng NL Queries.
+    Hạn chót Tháng 10/2026 (Milestone 2): Tích hợp Webhook gọi API hãng vận chuyển (Carrier Tracking) để tự động hóa ETD/ETA. Phát triển hệ thống Smart Alerts cảnh báo quá hạn tự động qua hệ thống, Email và WhatsApp.
+    Hạn chót Tháng 01/2027 (Milestone 3): Phát triển tính năng Smart Reconciliation (Đối soát ngân hàng) đọc file CSV/OFX/OCR PDF sao kê chuẩn ISO20022, nhận diện OCR hóa đơn nhà cung cấp tự động gán vào lô hàng (Documents Intelligence).
+
+5. Cấu trúc Liên kết Dữ liệu (Database Relationships) Các thông tin trên được ràng buộc chặt chẽ trong hệ thống cơ sở dữ liệu qua các khóa ngoại (Foreign Keys):
+
+    Khóa ngoại tasks.assignee_id > users.id: Liên kết cụ thể từng task tính năng cho Thảo, Kỳ hoặc Lực.
+    Khóa ngoại tasks.milestone_id > milestones.id: Theo dõi các tính năng đang nằm ở giai đoạn nào (M1, M2 hay M3).
+    Khóa ngoại tasks.project_id > projects.id và members.project_id > projects.id: Nhóm tất cả các dữ liệu công việc và thành viên vào chung dự án MTL Logistics.

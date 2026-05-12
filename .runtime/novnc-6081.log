@@ -1,0 +1,5 @@
+WebSocket server settings:
+  - Listen on 127.0.0.1:6081
+  - Web server. Web root: /usr/share/novnc
+  - No SSL/TLS support (no cert file)
+  - proxying from 127.0.0.1:6081 to localhost:5900

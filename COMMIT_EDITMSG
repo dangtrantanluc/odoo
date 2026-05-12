@@ -1,0 +1,13 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch tanluc
+# Changes to be committed:
+#	new file:   .agents/skills/pm-odoo/SKILL.md
+#	modified:   docker-compose.yaml
+#	new file:   openclaw/openclaw
+#
+# Changes not staged for commit:
+#	modified:   openclaw/openclaw (untracked content)
+#

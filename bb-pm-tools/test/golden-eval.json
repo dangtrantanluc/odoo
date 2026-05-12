@@ -1,0 +1,270 @@
+{
+  "_doc": "Golden eval set cho 3-mode dispatcher v2. Dùng để regression-test mỗi lần đổi prompt / đổi LLM / đổi tool list. PASS = mode đúng + tool gọi đúng + answer chứa expected_fields. Mở rộng dần khi có production traffic. Schema field: id, category(READ|ACTION|AUTOMATION|MISSING|END_SESSION), question, expected_mode, expected_tool, expected_args_pattern (regex hoặc subset object), expected_fields_in_answer (substring match), notes.",
+  "version": "v2.1-2026-05-05",
+  "cases": [
+    {
+      "id": "read-001",
+      "category": "READ",
+      "question": "Có bao nhiêu task đang quá hạn?",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(quá hạn|overdue)" },
+      "expected_fields_in_answer": ["task"],
+      "notes": "Cơ bản nhất. Phải dùng status != DONE và deadline < NOW. NULL deadline phải bị loại."
+    },
+    {
+      "id": "read-002",
+      "category": "READ",
+      "question": "Task của tôi đang gì?",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(của tôi|caller|my tasks)" },
+      "expected_fields_in_answer": ["task"],
+      "notes": "Phải dùng caller userId từ context, KHÔNG hỏi lại."
+    },
+    {
+      "id": "read-003",
+      "category": "READ",
+      "question": "Ai đang làm task #42?",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(task.*42|assignee)" },
+      "expected_fields_in_answer": [],
+      "notes": "Single-task assignee lookup. Cũ là get_task_owner."
+    },
+    {
+      "id": "read-004",
+      "category": "READ",
+      "question": "Liệt kê dự án đang active sắp xếp theo deadline gần nhất",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(project|dự án).*(active|đang)" },
+      "expected_fields_in_answer": ["dự án"],
+      "notes": "ORDER BY endDate ASC, status=ACTIVE."
+    },
+    {
+      "id": "read-005",
+      "category": "READ",
+      "question": "Ai trong team Software đang rảnh nhất tuần này?",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(rảnh|workload|software)" },
+      "expected_fields_in_answer": [],
+      "notes": "GROUP BY assignee, COUNT open tasks ASC, filter department='Software'."
+    },
+    {
+      "id": "read-006",
+      "category": "READ",
+      "question": "Báo cáo digest hôm nay",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(digest|tổng hợp|báo cáo.*hôm nay)" },
+      "expected_fields_in_answer": ["dự án"],
+      "notes": "Aggregate query. Có thể split thành nhiều report.query (active count, overdue, stale)."
+    },
+    {
+      "id": "read-007",
+      "category": "READ",
+      "question": "Task priority HIGH chưa làm xong trong dự án Bluebolt",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(priority|high|bluebolt)" },
+      "expected_fields_in_answer": [],
+      "notes": "JOIN tasks + projects + filter priority='HIGH' + status!=DONE."
+    },
+    {
+      "id": "read-008",
+      "category": "READ",
+      "question": "Tuần qua hoàn thành bao nhiêu task?",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(tuần|week|hoàn thành|done)" },
+      "expected_fields_in_answer": ["task"],
+      "notes": "Date range last 7d, status='DONE'. Phải biết cột completedAt hoặc updatedAt + status."
+    },
+    {
+      "id": "read-009",
+      "category": "READ",
+      "question": "Lần trước bạn nói gì về dashboard KPI?",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(memory|nhớ|trước|dashboard.*kpi)" },
+      "expected_fields_in_answer": [],
+      "notes": "Memory recall qua report.query trên agent_memory table."
+    },
+    {
+      "id": "read-010",
+      "category": "READ",
+      "question": "Follow-up nào chưa được trả lời quá 2 ngày?",
+      "expected_mode": "READ",
+      "expected_tool": "report.query",
+      "expected_args_pattern": { "question": "(?i)(follow.?up|chưa.*reply)" },
+      "expected_fields_in_answer": [],
+      "notes": "agent_follow_ups WHERE status='PENDING' AND askedAt < NOW - 2d."
+    },
+
+    {
+      "id": "action-001",
+      "category": "ACTION",
+      "question": "Chuyển task #5 sang DONE",
+      "expected_mode": "ACTION",
+      "expected_tool": "task.update",
+      "expected_args_pattern": { "taskId": 5, "patch": { "status": "DONE" } },
+      "expected_fields_in_answer": ["DONE"],
+      "notes": "Real task id=5 'Finish KPI cards component' (TODO). Direct command, confirm 1 lần rồi chạy."
+    },
+    {
+      "id": "action-002",
+      "category": "ACTION",
+      "question": "Tôi đã xong task login rồi",
+      "expected_mode": "ACTION",
+      "expected_tool": "task.update",
+      "expected_args_pattern": { "patch": { "status": "DONE" } },
+      "expected_fields_in_answer": ["login"],
+      "notes": "User report đã làm. PHẢI confirm 'đánh dấu task X DONE đúng không?' trước khi update. Real task: id=3 'Fix login redirect bug'."
+    },
+    {
+      "id": "action-003",
+      "category": "ACTION",
+      "question": "Assign task #7 cho user Tran Thi B",
+      "expected_mode": "ACTION",
+      "expected_tool": "task.update",
+      "expected_args_pattern": { "taskId": 7, "patch": { "assigneeId": ".+" } },
+      "expected_fields_in_answer": [],
+      "notes": "Real task id=7 + user id=4. Phải search user trước (report.query users), confirm, rồi task.update."
+    },
+    {
+      "id": "action-004",
+      "category": "ACTION",
+      "question": "Tạo task 'Viết unit test cho module auth' trong dự án Bluebolt deadline thứ 6",
+      "expected_mode": "ACTION",
+      "expected_tool": "task.create",
+      "expected_args_pattern": { "name": "(?i)unit test.*auth" },
+      "expected_fields_in_answer": ["task", "tạo"],
+      "notes": "Phải convert 'thứ 6' thành ISO date. Phải tìm projectId của 'Bluebolt' trước."
+    },
+    {
+      "id": "action-005",
+      "category": "ACTION",
+      "question": "Nhắn cho Tran Thi B hỏi task dashboard chạy tới đâu rồi",
+      "expected_mode": "ACTION",
+      "expected_tool": "message.send",
+      "expected_args_pattern": { "text": "(?i)(dashboard)" },
+      "expected_fields_in_answer": ["Tran"],
+      "notes": "User id=4 có trong DB. Phải confirm trước khi send. Tool: message.send với to.kind='bb_user' hoặc 'gapo_query'."
+    },
+    {
+      "id": "action-006",
+      "category": "ACTION",
+      "question": "Tôi bị stuck task #4 vì chờ design",
+      "expected_mode": "ACTION",
+      "expected_tool": "task.report_blocker",
+      "expected_args_pattern": { "taskId": 4, "description": "(?i)(design|chờ)" },
+      "expected_fields_in_answer": ["blocker"],
+      "notes": "Real task id=4 'Research Flutter vs RN'. Severity default MED."
+    },
+    {
+      "id": "action-007",
+      "category": "ACTION",
+      "question": "Tạo dự án mới 'Mobile App V2' deadline 2026-08-01 owner là tôi",
+      "expected_mode": "ACTION",
+      "expected_tool": "project.create",
+      "expected_args_pattern": { "name": "(?i)mobile app v2", "endDate": "2026-08-01" },
+      "expected_fields_in_answer": ["dự án", "Mobile App"],
+      "notes": "ownerId = caller. Phải confirm trước khi tạo."
+    },
+    {
+      "id": "action-008",
+      "category": "ACTION",
+      "question": "Mark follow-up #1 là đã reply",
+      "expected_mode": "ACTION",
+      "expected_tool": "follow_up.update",
+      "expected_args_pattern": { "id": 1, "status": "REPLIED" },
+      "expected_fields_in_answer": ["follow"],
+      "notes": "Direct command. Note: nếu follow-up #1 không tồn tại trong seed, tool gọi đúng nhưng API 404 — vẫn pass criterion 1+2."
+    },
+
+    {
+      "id": "automation-001",
+      "category": "AUTOMATION",
+      "question": "Lập digest hàng ngày 9h sáng cho group |Bluebolt| 2025. Confirm và tạo luôn.",
+      "expected_mode": "AUTOMATION",
+      "expected_tool": "automation.create",
+      "expected_args_pattern": { "schedule": "0 9 \\* \\* \\*", "workflow": "(?i)daily.?digest" },
+      "expected_fields_in_answer": ["digest"],
+      "notes": "Question đã chứa 'Confirm và tạo luôn' để override ACTION SAFETY rule (vẫn confirm thật trong production). Cron expression đúng TZ Asia/Ho_Chi_Minh."
+    },
+    {
+      "id": "automation-002",
+      "category": "AUTOMATION",
+      "question": "Chạy weekly report ngay bây giờ với target collab:7001341214635140096",
+      "expected_mode": "AUTOMATION",
+      "expected_tool": "workflow.run",
+      "expected_args_pattern": { "name": "(?i)weekly.?report" },
+      "expected_fields_in_answer": ["báo cáo"],
+      "notes": "One-shot. VN reply dùng 'báo cáo'. Target inline trong question để workflow chạy được."
+    },
+    {
+      "id": "automation-003",
+      "category": "AUTOMATION",
+      "question": "List các automation đang chạy",
+      "expected_mode": "AUTOMATION",
+      "expected_tool": "automation.list",
+      "expected_args_pattern": {},
+      "expected_fields_in_answer": ["automation"],
+      "notes": "Read-style nhưng vẫn thuộc namespace automation.* theo spec."
+    },
+    {
+      "id": "automation-004",
+      "category": "AUTOMATION",
+      "question": "Tắt automation id 1, confirm luôn",
+      "expected_mode": "AUTOMATION",
+      "expected_tool": "automation.delete",
+      "expected_args_pattern": { "id": 1 },
+      "expected_fields_in_answer": [],
+      "notes": "Direct ID + 'confirm luôn' override để skip second confirm step."
+    },
+
+    {
+      "id": "missing-001",
+      "category": "MISSING",
+      "question": "Export tất cả task ra Excel gửi mail cho tôi",
+      "expected_mode": "MISSING",
+      "expected_tool": null,
+      "expected_args_pattern": null,
+      "expected_fields_in_answer": ["MISSING", "export"],
+      "notes": "Chưa có tool export.* hoặc email.send. Phải trả MISSING JSON với suggested_tool."
+    },
+    {
+      "id": "missing-002",
+      "category": "MISSING",
+      "question": "Cho mời user Lực vào project Bluebolt",
+      "expected_mode": "MISSING",
+      "expected_tool": null,
+      "expected_args_pattern": null,
+      "expected_fields_in_answer": ["MISSING"],
+      "notes": "Project member management chưa có domain tool — cần project.add_member."
+    },
+
+    {
+      "id": "end-001",
+      "category": "END_SESSION",
+      "question": "ok cảm ơn",
+      "expected_mode": "END_SESSION",
+      "expected_tool": null,
+      "expected_args_pattern": null,
+      "expected_fields_in_answer": ["[END_SESSION]"],
+      "notes": "Trả 1-2 từ + marker. Watcher cần marker để không spam Gapo."
+    },
+    {
+      "id": "end-002",
+      "category": "END_SESSION",
+      "question": "👍",
+      "expected_mode": "END_SESSION",
+      "expected_tool": null,
+      "expected_args_pattern": null,
+      "expected_fields_in_answer": ["[END_SESSION]"],
+      "notes": "Emoji ack."
+    }
+  ]
+}

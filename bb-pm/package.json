@@ -1,0 +1,24 @@
+{
+  "name": "bb-pm",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,cyan \"pnpm --filter @bb-pm/api dev\" \"pnpm --filter @bb-pm/web dev\"",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "db:up": "docker compose up bb_pm_db -d",
+    "db:migrate": "pnpm --filter @bb-pm/api prisma migrate dev",
+    "db:seed": "pnpm --filter @bb-pm/api prisma db seed",
+    "db:reset": "pnpm --filter @bb-pm/api prisma migrate reset"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0"
+}
