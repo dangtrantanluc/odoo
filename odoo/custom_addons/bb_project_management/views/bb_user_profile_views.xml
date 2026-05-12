@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Extend res.users admin form to show MinIO avatar URL -->
+    <record id="view_bb_user_profile_form" model="ir.ui.view">
+        <field name="name">res.users.bb.avatar</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="before">
+                <div class="bb_avatar_section o_form_sheet"
+                     style="background:#f8f9ff; border-left:4px solid #667eea; padding:16px 24px; margin-bottom:0;">
+                    <strong style="display:block; font-size:.95rem; margin-bottom:4px;">
+                        <i class="fa fa-cloud-upload" style="color:#667eea; margin-right:6px;"/>
+                        MinIO Avatar URL
+                    </strong>
+                    <field name="bb_avatar_url" widget="url"
+                           placeholder="https://your-minio-host/file-storage/avatars/..."
+                           style="max-width:420px;"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

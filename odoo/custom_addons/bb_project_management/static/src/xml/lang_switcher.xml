@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+
+<t t-name="bb_project_management.LangSwitcher">
+    <div class="bb_lang_switcher o_dropdown o_nav_entry" t-on-click="switchLang"
+         t-att-title="state.currentLang === 'vi_VN' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'"
+         style="cursor:pointer; padding: 0 8px; display:flex; align-items:center; gap:4px;">
+        <span class="bb_lang_flag" style="font-size:16px;">
+            <t t-esc="state.currentLang === 'vi_VN' ? '🇻🇳' : '🇺🇸'"/>
+        </span>
+        <span class="bb_lang_label" style="font-size:12px; font-weight:600; color: var(--o-navbar-color, #fff);">
+            <t t-esc="state.currentLang === 'vi_VN' ? 'VI' : 'EN'"/>
+        </span>
+    </div>
+</t>
+
+</templates>

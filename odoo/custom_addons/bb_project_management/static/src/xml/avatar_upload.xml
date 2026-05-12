@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+
+<t t-name="bb_project_management.AvatarUpload">
+    <!--
+        Floating avatar upload button shown in the top-right systray area.
+        Only visible after user has a MinIO avatar URL set (or always shows as an upload option).
+    -->
+    <div class="bb_avatar_widget">
+        <input t-ref="fileInput" type="file" accept="image/*" style="display:none"
+               t-on-change="onFileChange"/>
+
+        <button class="bb_avatar_btn" t-on-click="triggerPick"
+                t-att-disabled="state.uploading"
+                title="Upload profile avatar to MinIO">
+            <t t-if="state.uploading">
+                <i class="fa fa-circle-o-notch fa-spin"/>
+            </t>
+            <t t-else="">
+                <i class="fa fa-camera"/>
+            </t>
+        </button>
+    </div>
+</t>
+
+</templates>
