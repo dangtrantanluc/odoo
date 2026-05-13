@@ -203,7 +203,7 @@ const PATTERNS: Array<{
         `my\\s+tasks|` +
         `nh[uữ]ng\\s+vi[eệ]c\\s+c[uủ]a\\s+${SELF_PRONOUN_RE_STR}|` +
         `${SELF_PRONOUN_RE_STR}\\s+(có\\s+)?task(\\s+\\S+){0,5}|` +
-        `task\\s+(nào\\s+)?(c[uủ]a\\s+${SELF_PRONOUN_RE_STR}\\s+)?(h[oô]m\\s*nay|chi[eề]u\\s*nay|s[aá]ng\\s*nay|t[oô]i\\s*nay|tu[aầ]n\\s*n[aà]y|s[aắ]p\\s*t[oớ]i|s[aắ]p\\s*deadline)(\\s+c[uủ]a\\s+${SELF_PRONOUN_RE_STR})?(\\s+l[aà]\\s+(g[iì]|sao|j))?` +
+        `task\\s+(nào\\s+)?(c[uủ]a\\s+${SELF_PRONOUN_RE_STR}\\s+)?(h[oô]m\\s*nay|chi[eề]u\\s*nay|s[aá]ng\\s*nay|t[oô]i\\s*nay|tu[aầ]n\\s*n[aà]y|s[aắ]p\\s*t[oớ]i|s[aắ]p\\s*deadline)(\\s+c[uủ]a\\s+${SELF_PRONOUN_RE_STR})?(\\s+l[aà]\\s+(g[iì]|sao|j)(\\s+v[aậ]y)?)?` +
       `)\\s*[\\?.k]?\\s*$`,
       "iu",
     ),

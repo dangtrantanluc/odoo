@@ -45,7 +45,7 @@ const SEL = {
 //   - Group:     /collab/<collabId>/chat
 // Caller can pass either a bare numeric id (we'll guess based on length —
 // not ideal) or a prefixed form "dm:<id>" / "collab:<id>" (preferred).
-const GAPO_BASE_URL = "https://www.gapowork.vn";
+const GAPO_BASE_URL = config.gapo.baseUrl.replace(/\/$/, "");
 
 function buildConversationUrl(idOrPrefixed: string): string {
   if (idOrPrefixed.startsWith("collab:")) {

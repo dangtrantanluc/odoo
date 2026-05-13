@@ -1,5 +1,6 @@
 import { Page } from "playwright";
 import { newLongLivedPage } from "./browser";
+import { config } from "./config";
 
 /**
  * Message watcher — monitors the bot's Gapo Work account via a long-lived
@@ -23,7 +24,8 @@ import { newLongLivedPage } from "./browser";
 // selecting any real chat. The previously-used cid 1777432856955 turned
 // out to be Võ Trọng Nhơn's DM — sitting there silently dropped every
 // message Nhơn sent.
-const MESSENGER_ROOT = "https://www.gapowork.vn/messenger/0";
+const GAPO_BASE_URL = config.gapo.baseUrl.replace(/\/$/, "");
+const MESSENGER_ROOT = `${GAPO_BASE_URL}/messenger/0`;
 const POLL_INTERVAL_MS = 10_000;
 const COOLDOWN_MS = 30_000;
 
@@ -37,6 +39,18 @@ function parseConversationHref(href: string): { kind: ConversationKind; conversa
   const collab = href.match(/^\/collab\/(\d+)\/chat/);
   if (collab) return { kind: "collab", conversationId: collab[1] };
   return null;
+}
+
+function isLikelySystemMessage(body: string): boolean {
+  const text = body.trim();
+  if (!text) return true;
+  return (
+    /^Bạn đã nhập thông tin đăng nhập thành công lúc:/iu.test(text) ||
+    /^Địa chỉ IP:/iu.test(text) ||
+    /^Device ID:/iu.test(text) ||
+    /^Tại:\s*(Chrome|Firefox|Safari|Edge)\b/iu.test(text) ||
+    /Bạn đã nhập thông tin đăng nhập thành công lúc:[\s\S]*Device ID:/iu.test(text)
+  );
 }
 
 interface IncomingHit {
@@ -153,6 +167,8 @@ class MessageWatcher {
       this.state = "stopped";
       this.page?.close().catch(() => {});
       this.page = null;
+      this.stats.errors++;
+      this.stats.lastError = `start: ${(err as any)?.message ?? err}`;
       throw err;
     }
   }
@@ -399,7 +415,7 @@ class MessageWatcher {
     console.log(`[watcher] process kind=${hit.kind} cid=${hit.conversationId} via ${hit.source}`);
 
     // Navigate using the original href (preserves /messenger vs /collab/.../chat).
-    await this.page.goto(`https://www.gapowork.vn${hit.href}`, {
+    await this.page.goto(`${GAPO_BASE_URL}${hit.href}`, {
       waitUntil: "domcontentloaded",
     });
     await this.page.waitForSelector('[role=textbox][contenteditable=true]', { timeout: 15000 });
@@ -432,6 +448,13 @@ class MessageWatcher {
       return;
     }
 
+    if (/^GapoSystem\b/i.test(ctx.headerName)) {
+      console.log(`[watcher] cid=${hit.conversationId} system conversation "${ctx.headerName}", skip`);
+      this.cooldowns.set(hit.conversationId, Date.now() + this.cfg.cooldownMs);
+      this.lastSeenBadgeKey.delete(hit.conversationId);
+      return;
+    }
+
     // v4 fix (2026-05-07): Pick last NON-BOT message thay vì last raw item.
     // v5 (2026-05-07): Plus exclude texts matching recentBotTexts (last 5
     // bot replies on this cid). BOT_ACK_RE catch typing indicator nhưng
@@ -460,15 +483,19 @@ class MessageWatcher {
         if (this.botName && m.author.includes(this.botName)) return false;
         if (BOT_ACK_RE_LASTMSG.test(m.body)) return false;
         if (isBotEcho(m.body)) return false;
+        if (isLikelySystemMessage(m.body)) return false;
         return true;
       })
       .pop();
-    const lastMsg = lastUserCandidate ?? ctx.recent[ctx.recent.length - 1];
     if (!lastUserCandidate) {
       console.log(
-        `[watcher] cid=${hit.conversationId} no user msg in last 5 — fallback raw (last="${lastMsg.body.slice(0, 40)}")`,
+        `[watcher] cid=${hit.conversationId} no user msg in last 5 — skip`,
       );
+      this.cooldowns.set(hit.conversationId, Date.now() + this.cfg.cooldownMs);
+      this.lastSeenBadgeKey.delete(hit.conversationId);
+      return;
     }
+    const lastMsg = lastUserCandidate;
 
     // Skip self — primary check via lastMsg.isOwn or botName author. Secondary:
     // nếu filter trên trả về null AND raw lastMsg là bot → skip.
@@ -834,6 +861,7 @@ class MessageWatcher {
             if (ourReplyHead && m.body.startsWith(ourReplyHead)) return false;
             if (BOT_ACK_RE.test(m.body)) return false;
             if (isBotEchoRescan(m.body)) return false; // v5
+            if (isLikelySystemMessage(m.body)) return false;
             return true;
           })
           .pop();

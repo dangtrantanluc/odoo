@@ -108,3 +108,33 @@ export async function disconnect(): Promise<void> {
 export function hasStoredAuth(): boolean {
   return fs.existsSync(config.browser.storageStatePath);
 }
+
+/** Cheap sanity check for a saved Gapo login. A storage file may exist but
+ * contain only analytics cookies after the real session expires. */
+export function hasLikelyGapoAuth(): boolean {
+  if (!hasStoredAuth()) return false;
+  try {
+    const raw = fs.readFileSync(config.browser.storageStatePath, "utf-8");
+    const state = JSON.parse(raw) as {
+      cookies?: Array<{ domain?: string; name?: string }>;
+      origins?: Array<{ origin?: string; localStorage?: Array<{ name?: string; value?: string }> }>;
+    };
+    const hasAuthCookie = (state.cookies ?? []).some((cookie) => {
+      const domain = cookie.domain ?? "";
+      const name = (cookie.name ?? "").toLowerCase();
+      if (!domain.includes("gapowork")) return false;
+      return !name.startsWith("_ga") && !name.startsWith("_gid") && !name.startsWith("_gat");
+    });
+    const hasAuthStorage = (state.origins ?? []).some((origin) => {
+      if (!(origin.origin ?? "").includes("gapowork")) return false;
+      return (origin.localStorage ?? []).some((item) => {
+        const name = (item.name ?? "").toLowerCase();
+        const value = item.value ?? "";
+        return value.length > 20 && ["token", "refresh_token", "user_info", "user_workspace"].includes(name);
+      });
+    });
+    return hasAuthCookie || hasAuthStorage;
+  } catch {
+    return false;
+  }
+}

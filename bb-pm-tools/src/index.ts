@@ -1,5 +1,5 @@
 import "./env"; // must run before config import
-import { config, assertConfig } from "./config";
+import { config, assertConfig, getActiveLlmConfig } from "./config";
 import { handleAgentRun, handleAgentMetrics, handleHealth } from "./webhook";
 import { startScheduler } from "./scheduler";
 
@@ -52,7 +52,7 @@ export function register(api: any) {
     console.error("[bb-pm-tools] scheduler bootstrap failed:", err?.message ?? err);
   });
 
-  const llmCfg = config.llm[config.llm.activeProvider];
+  const llmCfg = getActiveLlmConfig();
   console.log(
     `[bb-pm-tools] Registered — agent=${AGENT_RUN_PATH}, api=${config.bbPmApi.baseUrl}, llm=${config.llm.activeProvider}/${llmCfg.model}`,
   );

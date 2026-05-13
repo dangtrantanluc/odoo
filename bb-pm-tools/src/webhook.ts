@@ -275,7 +275,7 @@ export async function handleHealth(
   }
 
   // Lazy require để tránh circular import
-  const { config } = await import("./config");
+  const { config, getActiveLlmConfig } = await import("./config");
   const { bbPm } = await import("./api-client");
 
   type CheckResult = { ok: boolean; latencyMs: number; detail?: string };
@@ -302,7 +302,7 @@ export async function handleHealth(
   // Check 2: LLM endpoint reachable (HEAD/OPTIONS - không tốn token)
   const llmStart = Date.now();
   try {
-    const cfg = config.llm[config.llm.activeProvider];
+    const cfg = getActiveLlmConfig();
     // Most OpenAI-compat endpoints expose /models cheap GET
     const modelsUrl = `${cfg.baseUrl.replace(/\/$/, "")}/models`;
     const headers: Record<string, string> = {};

@@ -21,11 +21,24 @@ import * as fs from "node:fs";
 loadEnv();
 
 async function main() {
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch({
+    headless: false,
+    ignoreDefaultArgs: ["--enable-automation"],
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      "--disable-infobars",
+      "--no-sandbox",
+    ],
+  });
   const context = await browser.newContext({
     locale: "vi-VN",
     timezoneId: "Asia/Ho_Chi_Minh",
     viewport: { width: 1280, height: 800 },
+    userAgent:
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  });
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
   });
   const page = await context.newPage();
   await page.goto(config.gapo.baseUrl, { waitUntil: "domcontentloaded" });

@@ -1,6 +1,15 @@
-export type LlmProviderName = "default" | "gemini" | "openrouter";
+const LLM_PROVIDER_NAMES = ["default", "gemini", "openrouter", "9router"] as const;
+export type LlmProviderName = (typeof LLM_PROVIDER_NAMES)[number];
 
-const llmActiveProvider = (process.env.LLM_PROVIDER || "default") as LlmProviderName;
+const requestedLlmProvider = process.env.LLM_PROVIDER || "default";
+
+export function isLlmProviderName(value: string): value is LlmProviderName {
+  return (LLM_PROVIDER_NAMES as readonly string[]).includes(value);
+}
+
+const llmActiveProvider: LlmProviderName = isLlmProviderName(requestedLlmProvider)
+  ? requestedLlmProvider
+  : "default";
 
 export const config = {
   bbPmApi: {
@@ -12,9 +21,11 @@ export const config = {
   //   - "gemini":     Google Gemini qua OpenAI-compat endpoint (GEMINI_*).
   //   - "openrouter": OpenRouter aggregator — tất cả model OpenAI/Anthropic/Google
   //                   qua 1 endpoint OpenAI-compat (OPENROUTER_*).
+  //   - "9router":    Local 9Router proxy / combo router (9ROUTER_*).
   // Dùng env LLM_PROVIDER để chọn global default. Per-call override qua
-  // chat(messages, tools, { provider: "gemini" | "openrouter" }).
+  // chat(messages, tools, { provider: "gemini" | "openrouter" | "9router" }).
   llm: {
+    requestedProvider: requestedLlmProvider,
     activeProvider: llmActiveProvider,
     default: {
       baseUrl: process.env.LLM_BASE_URL || "http://localhost:8000/v1",
@@ -42,6 +53,30 @@ export const config = {
       model: process.env.OPENROUTER_MODEL || "openai/gpt-4o",
       maxTokens: Number(process.env.OPENROUTER_MAX_TOKENS || 2048),
       temperature: Number(process.env.OPENROUTER_TEMPERATURE || 0.2),
+    },
+    "9router": {
+      baseUrl:
+        process.env["9ROUTER_BASE_URL"] ||
+        process.env.NINE_ROUTER_BASE_URL ||
+        "http://localhost:20128/v1",
+      apiKey:
+        process.env["9ROUTER_API_KEY"] ||
+        process.env.NINE_ROUTER_API_KEY ||
+        "not-needed",
+      model:
+        process.env["9ROUTER_MODEL"] ||
+        process.env.NINE_ROUTER_MODEL ||
+        "gemini/gemini-3-flash-preview",
+      maxTokens: Number(
+        process.env["9ROUTER_MAX_TOKENS"] ||
+          process.env.NINE_ROUTER_MAX_TOKENS ||
+          2048,
+      ),
+      temperature: Number(
+        process.env["9ROUTER_TEMPERATURE"] ||
+          process.env.NINE_ROUTER_TEMPERATURE ||
+          0.2,
+      ),
     },
   },
   // Outbound channel — scheduler and follow-up tool post messages via the
@@ -103,8 +138,17 @@ export const config = {
   },
 } as const;
 
+export function getActiveLlmConfig() {
+  return config.llm[config.llm.activeProvider];
+}
+
 export function assertConfig(): string[] {
   const missing: string[] = [];
+  if (!isLlmProviderName(config.llm.requestedProvider)) {
+    missing.push(
+      `LLM_PROVIDER(valid: ${LLM_PROVIDER_NAMES.join("|")}; got: ${config.llm.requestedProvider})`,
+    );
+  }
   if (!config.bbPmApi.agentToken) missing.push("BB_PM_AGENT_TOKEN");
   // GAPO_SEND_TOKEN is required only if cron targets are set. Keeps the
   // plugin boot clean in dev when cron is disabled.
@@ -118,6 +162,9 @@ export function assertConfig(): string[] {
   }
   if (config.llm.activeProvider === "openrouter" && !config.llm.openrouter.apiKey) {
     missing.push("OPENROUTER_API_KEY");
+  }
+  if (config.llm.activeProvider === "9router" && !config.llm["9router"].apiKey) {
+    missing.push("9ROUTER_API_KEY");
   }
   return missing;
 }

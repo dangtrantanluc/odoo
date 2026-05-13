@@ -14,7 +14,7 @@ import {
   gapoReadThread,
   gapoGetUserStatus,
 } from "./gapo-actions";
-import { hasStoredAuth } from "./browser";
+import { hasLikelyGapoAuth, hasStoredAuth } from "./browser";
 import { checkDmThrottle, recordDmSent } from "./throttle";
 import { getWatcher } from "./watcher";
 
@@ -95,6 +95,7 @@ export default function register(api: OpenClawApi): void {
       writeJson(res, 200, {
         ok: true,
         authStored: hasStoredAuth(),
+        authLikelyValid: hasLikelyGapoAuth(),
         baseUrl: config.gapo.baseUrl,
       });
       return true;

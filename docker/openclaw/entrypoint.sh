@@ -30,14 +30,14 @@ if [ ! -f "${CONFIG_FILE}" ]; then
   "models": {
     "mode": "merge",
     "providers": {
-      "berp-openai": {
-        "baseUrl": "${LLM_BASE_URL:-http://host.docker.internal:8000/v1}",
-        "apiKey": "${LLM_API_KEY:-nokey}",
+      "9router": {
+        "baseUrl": "${NINE_ROUTER_BASE_URL:-${LLM_BASE_URL:-http://host.docker.internal:20128/v1}}",
+        "apiKey": "${NINE_ROUTER_API_KEY:-${LLM_API_KEY:-nokey}}",
         "api": "openai-completions",
         "models": [
           {
-            "id": "${LLM_MODEL:-Qwen/Qwen3.6-27B-FP8}",
-            "name": "${LLM_MODEL:-Qwen/Qwen3.6-27B-FP8}",
+            "id": "${NINE_ROUTER_MODEL:-${LLM_MODEL:-gemini/gemini-3-flash-preview}}",
+            "name": "${NINE_ROUTER_MODEL:-${LLM_MODEL:-gemini/gemini-3-flash-preview}}",
             "api": "openai-completions",
             "reasoning": false,
             "input": ["text"],
@@ -86,9 +86,16 @@ if [ ! -f "${BB_PM_TOOLS_ENV}" ]; then
 BB_PM_API_URL=${BB_PM_API_URL:-http://bb_pm_api:4000/api/v1}
 BB_PM_AGENT_TOKEN=${BB_PM_AGENT_TOKEN:-}
 
-LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
-LLM_API_KEY=${LLM_API_KEY:-nokey}
-LLM_MODEL=${LLM_MODEL:-Qwen/Qwen3.6-27B-FP8}
+LLM_PROVIDER=${LLM_PROVIDER:-9router}
+9ROUTER_BASE_URL=${NINE_ROUTER_BASE_URL:-http://host.docker.internal:20128/v1}
+9ROUTER_API_KEY=${NINE_ROUTER_API_KEY:-${LLM_API_KEY:-nokey}}
+9ROUTER_MODEL=${NINE_ROUTER_MODEL:-${LLM_MODEL:-gemini/gemini-3-flash-preview}}
+9ROUTER_MAX_TOKENS=${NINE_ROUTER_MAX_TOKENS:-2048}
+9ROUTER_TEMPERATURE=${NINE_ROUTER_TEMPERATURE:-0.2}
+
+LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:20128/v1}
+LLM_API_KEY=${LLM_API_KEY:-${NINE_ROUTER_API_KEY:-nokey}}
+LLM_MODEL=${LLM_MODEL:-${NINE_ROUTER_MODEL:-gemini/gemini-3-flash-preview}}
 LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-2048}
 LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.2}
 
