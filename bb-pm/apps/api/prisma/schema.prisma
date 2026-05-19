@@ -257,8 +257,11 @@ model Task {
   followUps AgentFollowUp[]
 
   @@index([projectId, status])
-  @@index([assigneeId])
+  @@index([assigneeId, status])
   @@index([milestoneId])
+  @@index([companyId, status])
+  @@index([deadline, status])
+  @@index([updatedAt])
   @@map("tasks")
 }
 
@@ -304,6 +307,7 @@ model Backlog {
 
   @@index([taskId, status])
   @@index([projectId, status])
+  @@index([projectId, workDate])
   @@index([userId, workDate])
   @@map("backlogs")
 }
