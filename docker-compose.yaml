@@ -82,14 +82,15 @@ services:
     networks:
       - pm_bb_pm_net
 
-  openclaw:
+  # Standalone Python PM Agent — replaces the OpenClaw gateway + 3 plugins.
+  # Host port stays 18789 so the public Gapo webhook URL does not change.
+  pm_agent:
     build:
-      context: .
-      dockerfile: docker/openclaw/Dockerfile
-    container_name: openclaw
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: pm_agent
     restart: unless-stopped
     environment:
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
       BB_PM_API_URL: http://bb_pm_api:4000/api/v1
       BB_PM_AGENT_TOKEN: ${AGENT_API_TOKEN:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-default}
@@ -104,24 +105,11 @@ services:
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
-      GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-}
-      GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-}
       GAPO_API_URL: ${GAPO_API_URL:-https://api.gapowork.vn/3rd-bot/v1.0/3rd/messages}
       GAPO_BOT_TOKEN: ${GAPO_BOT_TOKEN:-}
       GAPO_BOT_ID: ${GAPO_BOT_ID:-}
       GAPO_DRY_RUN: ${GAPO_DRY_RUN:-false}
       GAPO_SEND_TOKEN: ${GAPO_SEND_TOKEN:-}
-      GAPO_SEND_URL: http://localhost:18789/api/plugins/gapo-agent/send
-      BROWSER_TOOLS_TOKEN: ${BROWSER_TOOLS_TOKEN:-${GAPO_SEND_TOKEN:-}}
-      BROWSER_TOOLS_SEND_URL: http://localhost:18789/api/plugins/browser-tools/send-dm
-      BROWSER_TOOLS_FIND_URL: http://localhost:18789/api/plugins/browser-tools/find-user
-      BROWSER_TOOLS_FIND_AND_OPEN_DM_URL: http://localhost:18789/api/plugins/browser-tools/find-and-open-dm
-      GAPO_WORK_URL: ${GAPO_WORK_URL:-https://www.gapowork.vn}
-      BROWSER_HEADLESS: ${BROWSER_HEADLESS:-1}
-      BROWSER_MAX_DMS_PER_HOUR: ${BROWSER_MAX_DMS_PER_HOUR:-30}
-      AGENT_WEBHOOK_URL: http://localhost:18789/api/plugins/bb-pm/agent/run
-      AGENT_WEBHOOK_TIMEOUT_MS: ${AGENT_WEBHOOK_TIMEOUT_MS:-320000}
-      BB_PM_PROMPT_VERSION: ${BB_PM_PROMPT_VERSION:-v2}
       REDIS_URL: redis://bb_pm_redis:6379
       CRON_TZ: ${CRON_TZ:-Asia/Ho_Chi_Minh}
       CRON_DAILY_DIGEST: ${CRON_DAILY_DIGEST:-0 8 * * *}
@@ -134,14 +122,12 @@ services:
       CRON_MISSING_CHECKIN_FOLLOWUP: ${CRON_MISSING_CHECKIN_FOLLOWUP:-0 18 * * 1-5}
       ADMIN_ALERT_TARGET: ${ADMIN_ALERT_TARGET:-}
     ports:
-      - "${OPENCLAW_PORT:-18789}:18789"
+      - "${PM_AGENT_PORT:-18789}:8001"
     depends_on:
       bb_pm_api:
         condition: service_started
       bb_pm_redis:
         condition: service_healthy
-    volumes:
-      - openclaw_home:/root/.openclaw
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -150,7 +136,6 @@ services:
 volumes:
   bb_pm_pgdata:
   bb_pm_redis_data:
-  openclaw_home:
 
 networks:
   pm_bb_pm_net:

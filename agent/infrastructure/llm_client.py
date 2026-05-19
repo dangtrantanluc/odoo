@@ -1,112 +1,149 @@
+"""Multi-provider OpenAI-compatible LLM client.
+
+Ports bb-pm-tools/src/infrastructure/llm-client.ts. Supports the providers
+declared in config (default / gemini / openrouter / 9router), retries
+transient failures, and exposes a single `chat()` primitive used by the
+check-in parser, NL-to-SQL translator and tool layer.
+"""
+
 from __future__ import annotations
 
-import json
-import re
-from datetime import date
-from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
 import httpx
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-from core.config import Settings
-from domain.schemas import Blocker, ParsedCheckin, Severity, TaskStatus
+from core.config import LlmProviderConfig, settings
+from core.logging import log_event
 
 
-CHECKIN_EXTRACT_SYSTEM_PROMPT = """
-Bạn là PM assistant. Chuyển update tiếng Việt tự nhiên thành JSON.
-Chỉ trả JSON, không markdown.
-Schema:
-{
-  "work_date": "YYYY-MM-DD",
-  "summary": "việc đã làm",
-  "done_items": ["item"],
-  "hours": 1.5,
-  "task_status": "TODO|IN_PROGRESS|REVIEW|DONE|null",
-  "blocker": {"description": "...", "severity": "LOW|MED|HIGH"} | null,
-  "needs_clarification": false,
-  "clarification_question": null
-}
-Không bịa dữ liệu. Nếu không thấy số giờ, để hours = 1.
-Nếu có từ khóa blocker/vướng/chưa có/đang kẹt thì tạo blocker.
-""".strip()
+class LlmTransientError(RuntimeError):
+    """Raised for retryable upstream failures (5xx, connection drops)."""
+
+
+class LlmError(RuntimeError):
+    """Raised for non-retryable LLM failures (4xx, malformed response)."""
+
+
+class ChatResponse:
+    __slots__ = ("content", "tool_calls", "finish_reason", "usage", "latency_ms", "provider", "model")
+
+    def __init__(
+        self,
+        content: Optional[str],
+        tool_calls: list[dict[str, Any]],
+        finish_reason: str,
+        usage: Optional[dict[str, Any]] = None,
+        latency_ms: int = 0,
+        provider: str = "",
+        model: str = "",
+    ) -> None:
+        self.content = content
+        self.tool_calls = tool_calls
+        self.finish_reason = finish_reason
+        self.usage = usage
+        self.latency_ms = latency_ms
+        self.provider = provider
+        self.model = model
+
+
+_RETRYABLE = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout,
+              httpx.RemoteProtocolError, LlmTransientError)
 
 
 class LlmClient:
-    def __init__(self, settings: Settings):
-        self.settings = settings
-        self.client = httpx.AsyncClient(
-            base_url=settings.llm_base_url,
-            timeout=httpx.Timeout(60.0),
-            headers={"Authorization": f"Bearer {settings.llm_api_key}"},
-        )
+    def __init__(self) -> None:
+        self._clients: dict[str, httpx.AsyncClient] = {}
+
+    def _client(self, provider: str, cfg: LlmProviderConfig) -> httpx.AsyncClient:
+        if provider not in self._clients:
+            headers = {"Content-Type": "application/json"}
+            if cfg.api_key and cfg.api_key not in ("not-needed", "nokey"):
+                headers["Authorization"] = f"Bearer {cfg.api_key}"
+            self._clients[provider] = httpx.AsyncClient(
+                base_url=cfg.base_url,
+                timeout=httpx.Timeout(330.0, connect=10.0),
+                headers=headers,
+            )
+        return self._clients[provider]
 
     async def close(self) -> None:
-        await self.client.aclose()
+        for client in self._clients.values():
+            await client.aclose()
+        self._clients.clear()
 
-    async def parse_checkin(self, text: str) -> ParsedCheckin:
-        fallback = ParsedCheckin(
-            summary=text.strip(),
-            hours=extract_hours(text) or Decimal("1.0"),
-            blocker=extract_blocker(text),
-            task_status=extract_status(text),
-        )
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: Optional[list[dict[str, Any]]] = None,
+        *,
+        provider: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        response_format: Optional[dict[str, str]] = None,
+    ) -> ChatResponse:
+        name = provider or settings.llm.active_provider
+        cfg = settings.llm.providers.get(name)
+        if cfg is None:
+            raise LlmError(f"Unknown LLM provider: {name}")
+        if name in {"gemini", "openrouter"} and not cfg.api_key:
+            raise LlmError(f"LLM provider '{name}' missing API key")
 
+        body: dict[str, Any] = {
+            "model": cfg.model,
+            "messages": messages,
+            "max_tokens": max_tokens if max_tokens is not None else cfg.max_tokens,
+            "temperature": temperature if temperature is not None else cfg.temperature,
+            "stream": False,
+        }
+        if response_format:
+            body["response_format"] = response_format
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
+
+        return await self._chat_with_retry(name, cfg, body)
+
+    @retry(
+        retry=retry_if_exception_type(_RETRYABLE),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1.5, min=1.5, max=6),
+        reraise=True,
+    )
+    async def _chat_with_retry(
+        self, name: str, cfg: LlmProviderConfig, body: dict[str, Any]
+    ) -> ChatResponse:
+        import time
+
+        client = self._client(name, cfg)
+        t0 = time.monotonic()
         try:
-            res = await self.client.post(
-                "/chat/completions",
-                json={
-                    "model": self.settings.llm_model,
-                    "temperature": 0,
-                    "messages": [
-                        {"role": "system", "content": CHECKIN_EXTRACT_SYSTEM_PROMPT},
-                        {"role": "user", "content": text},
-                    ],
-                    "response_format": {"type": "json_object"},
-                },
-            )
-            res.raise_for_status()
-            content = res.json()["choices"][0]["message"]["content"]
-            payload = json.loads(content)
-            return ParsedCheckin.model_validate(normalize_llm_payload(payload, fallback))
-        except Exception:
-            return fallback
+            res = await client.post("/chat/completions", json=body)
+        except _RETRYABLE as err:
+            log_event("llm.transient", level="warning", provider=name, error=str(err))
+            raise
+        if res.status_code >= 500:
+            log_event("llm.upstream_5xx", level="warning", provider=name, status=res.status_code)
+            raise LlmTransientError(f"LLM {res.status_code}: {res.text[:300]}")
+        if res.status_code >= 400:
+            raise LlmError(f"LLM {res.status_code}: {res.text[:300]}")
 
-
-def normalize_llm_payload(payload: dict[str, Any], fallback: ParsedCheckin) -> dict[str, Any]:
-    payload.setdefault("work_date", date.today().isoformat())
-    payload.setdefault("summary", fallback.summary)
-    payload.setdefault("done_items", [])
-    payload.setdefault("hours", str(fallback.hours))
-    payload.setdefault("task_status", fallback.task_status)
-    payload.setdefault("blocker", fallback.blocker.model_dump() if fallback.blocker else None)
-    payload.setdefault("needs_clarification", False)
-    payload.setdefault("clarification_question", None)
-    if payload["task_status"] == "null":
-        payload["task_status"] = None
-    return payload
-
-
-def extract_hours(text: str) -> Decimal | None:
-    match = re.search(r"(\d+(?:[,.]\d+)?)\s*(h|giờ|gio|hours?)\b", text, re.IGNORECASE)
-    if not match:
-        return None
-    return Decimal(match.group(1).replace(",", "."))
-
-
-def extract_status(text: str) -> TaskStatus | None:
-    lowered = text.lower()
-    if re.search(r"\b(done|xong|hoàn thành|hoan thanh)\b", lowered):
-        return "DONE"
-    if re.search(r"\b(review|pr|merge request|chờ duyệt|cho duyet)\b", lowered):
-        return "REVIEW"
-    if re.search(r"\b(đang làm|dang lam|in progress)\b", lowered):
-        return "IN_PROGRESS"
-    return None
-
-
-def extract_blocker(text: str) -> Blocker | None:
-    lowered = text.lower()
-    if not re.search(r"\b(blocker|vướng|vuong|kẹt|ket|chưa có|chua co|không có|khong co)\b", lowered):
-        return None
-    severity: Severity = "HIGH" if re.search(r"\b(gấp|gap|critical|nghiêm trọng|nghiem trong)\b", lowered) else "MED"
-    return Blocker(description=text.strip(), severity=severity)
+        data = res.json()
+        choice = (data.get("choices") or [None])[0]
+        if not choice:
+            raise LlmError("LLM returned no choices")
+        message = choice.get("message") or {}
+        return ChatResponse(
+            content=message.get("content"),
+            tool_calls=message.get("tool_calls") or [],
+            finish_reason=choice.get("finish_reason") or "stop",
+            usage=data.get("usage"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            provider=name,
+            model=cfg.model,
+        )

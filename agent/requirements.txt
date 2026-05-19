@@ -1,5 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
 httpx
 pydantic
 python-dotenv
+apscheduler
+redis
+tenacity
+tzdata
