@@ -122,21 +122,9 @@ async function sendGapoBody(
     url: url ? new URL(url).pathname : "",
     text: normalizedBody.text,
     textChars: cleaned.length,
-    mode: url && token ? "gapo-agent" : "browser-fallback",
   });
   if (!url || !token) {
-    const fallback = await sendViaBrowserIfAddressable(conversationId, normalizedBody.text);
-    channelLog("gapo.send.end", {
-      conversationId,
-      durationMs: Date.now() - startedAt,
-      delivered: fallback.sent,
-      via: fallback.sent ? "browser" : "none",
-      fallback,
-    });
-    if (fallback.sent) return;
-    throw new Error(
-      `channel-out not configured (GAPO_SEND_URL / GAPO_SEND_TOKEN missing); browser fallback=${fallback.reason}`,
-    );
+    throw new Error("channel-out not configured (GAPO_SEND_URL / GAPO_SEND_TOKEN missing)");
   }
   const res = await fetch(url, {
     method: "POST",
@@ -147,33 +135,14 @@ async function sendGapoBody(
     body: JSON.stringify({ conversationId, text: normalizedBody.text, body: normalizedBody }),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    const detail = body ? `: ${body}` : "";
-    const fallback = await sendViaBrowserIfAddressable(conversationId, normalizedBody.text);
-    if (fallback.sent) {
-      channelLog("gapo.send.end", {
-        conversationId,
-        durationMs: Date.now() - startedAt,
-        delivered: true,
-        via: "browser",
-        gapoWorkStatus: res.status,
-        fallback,
-      });
-      console.warn(
-        `[bb-pm-tools] gapo-agent /send failed ${res.status}; delivered via browser fallback to ${conversationId}`,
-      );
-      return;
-    }
+    const errBody = await res.text().catch(() => "");
     channelLog("gapo.send.error", {
       conversationId,
       durationMs: Date.now() - startedAt,
       gapoWorkStatus: res.status,
-      gapoWorkBody: body,
-      fallback,
+      gapoWorkBody: errBody,
     });
-    throw new Error(
-      `gapo-agent /send failed ${res.status}${detail}; browser fallback=${fallback.reason}${fallback.message ? ` ${fallback.message}` : ""}`,
-    );
+    throw new Error(`gapo-agent /send failed ${res.status}${errBody ? `: ${errBody}` : ""}`);
   }
   channelLog("gapo.send.end", {
     conversationId,
@@ -182,210 +151,4 @@ async function sendGapoBody(
     via: "gapo-agent",
     gapoWorkStatus: res.status,
   });
-}
-
-async function sendViaBrowserIfAddressable(
-  conversationId: string,
-  text: string,
-): Promise<BrowserSendResult> {
-  const target = normalizeBrowserTarget(conversationId);
-  if (!target) return { sent: false, reason: "not-configured", message: "unsupported target" };
-  return await sendDmViaBrowser(target, text);
-}
-
-function normalizeBrowserTarget(conversationId: string): string | null {
-  const trimmed = conversationId.trim();
-  if (!trimmed) return null;
-  if (/^(dm|collab):\d+$/i.test(trimmed)) return trimmed;
-  if (/^gapo:\d+$/i.test(trimmed)) return `dm:${trimmed.slice(5)}`;
-  if (/^\d+$/.test(trimmed)) return trimmed;
-  return null;
-}
-
-/**
- * Browser fallback (Sprint 3.5) — used when bot API has no thread for
- * the recipient. Calls browser-tools /send-dm which drives Gapo Work
- * via Playwright. Returns the Gapo messageId on success so the caller
- * can persist the new thread mapping in bb-pm `channel_identity`.
- *
- * Returns:
- *   { sent: true, messageId }                — DM delivered
- *   { sent: false, reason: "not-configured" } — fallback disabled
- *   { sent: false, reason: "throttled" }     — hourly cap hit upstream
- *   { sent: false, reason: "error", message } — anything else
- */
-export type BrowserSendResult =
-  | { sent: true; messageId: string | null }
-  | { sent: false; reason: "not-configured" | "throttled" | "error"; message?: string; retryAfterSec?: number };
-
-/**
- * Search Gapo org for users by name. Returns matched display names.
- * Uses the browser-tools plugin (Playwright). Note: Gapo doesn't expose
- * conversationId in raw search results — use `findAndOpenDmViaBrowser`
- * if you need a cid for sending a message.
- */
-export async function findGapoUserViaBrowser(
-  query: string,
-): Promise<{ users: Array<{ name: string }> } | { error: string }> {
-  const url = config.browserTools.findUserUrl;
-  const token = config.browserTools.pluginToken;
-  if (!url || !token) return { error: "browser-tools not configured" };
-  const startedAt = Date.now();
-  channelLog("browser.find_user.start", { query, url: new URL(url).pathname });
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Plugin-Token": token },
-      body: JSON.stringify({ query }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      channelLog("browser.find_user.error", {
-        query,
-        status: res.status,
-        durationMs: Date.now() - startedAt,
-        body,
-      });
-      return { error: `${res.status}: ${body.slice(0, 200)}` };
-    }
-    const json = (await res.json()) as { users: Array<{ name: string }> };
-    channelLog("browser.find_user.end", {
-      query,
-      status: res.status,
-      durationMs: Date.now() - startedAt,
-      resultCount: json.users.length,
-      response: json,
-    });
-    return json;
-  } catch (err: any) {
-    channelLog("browser.find_user.error", {
-      query,
-      durationMs: Date.now() - startedAt,
-      error: err?.message ?? String(err),
-    });
-    return { error: err?.message ?? String(err) };
-  }
-}
-
-/**
- * Search Gapo org + click DM icon to get conversationId for sending.
- * Returns null if no matching user found.
- */
-export async function findAndOpenDmViaBrowser(
-  query: string,
-): Promise<{ conversationId: string; name: string } | { found: false } | { error: string }> {
-  const url = config.browserTools.findAndOpenDmUrl;
-  const token = config.browserTools.pluginToken;
-  if (!url || !token) return { error: "browser-tools not configured" };
-  const startedAt = Date.now();
-  channelLog("browser.find_open_dm.start", { query, url: new URL(url).pathname });
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Plugin-Token": token },
-      body: JSON.stringify({ query }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      channelLog("browser.find_open_dm.error", {
-        query,
-        status: res.status,
-        durationMs: Date.now() - startedAt,
-        body,
-      });
-      return { error: `${res.status}: ${body.slice(0, 200)}` };
-    }
-    const json = (await res.json()) as any;
-    channelLog("browser.find_open_dm.end", {
-      query,
-      status: res.status,
-      durationMs: Date.now() - startedAt,
-      response: json,
-    });
-    return json;
-  } catch (err: any) {
-    channelLog("browser.find_open_dm.error", {
-      query,
-      durationMs: Date.now() - startedAt,
-      error: err?.message ?? String(err),
-    });
-    return { error: err?.message ?? String(err) };
-  }
-}
-
-export async function sendDmViaBrowser(
-  externalId: string,
-  text: string,
-): Promise<BrowserSendResult> {
-  const url = config.browserTools.sendDmUrl;
-  const token = config.browserTools.pluginToken;
-  if (!url || !token) {
-    return { sent: false, reason: "not-configured" };
-  }
-  const startedAt = Date.now();
-  channelLog("browser.send_dm.start", {
-    externalId,
-    url: new URL(url).pathname,
-    text,
-    textChars: text.length,
-  });
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Plugin-Token": token,
-      },
-      body: JSON.stringify({ externalId, text }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      channelLog("browser.send_dm.error", {
-        externalId,
-        status: res.status,
-        durationMs: Date.now() - startedAt,
-        body,
-      });
-      return { sent: false, reason: "error", message: `${res.status}: ${body}` };
-    }
-    const json = (await res.json()) as {
-      sent: boolean;
-      reason?: string;
-      messageId?: string | null;
-      retryAfterSec?: number;
-    };
-    if (!json.sent && json.reason === "throttled") {
-      channelLog("browser.send_dm.error", {
-        externalId,
-        status: res.status,
-        durationMs: Date.now() - startedAt,
-        reason: "throttled",
-        retryAfterSec: json.retryAfterSec,
-      });
-      return { sent: false, reason: "throttled", retryAfterSec: json.retryAfterSec };
-    }
-    if (json.sent) {
-      channelLog("browser.send_dm.end", {
-        externalId,
-        status: res.status,
-        durationMs: Date.now() - startedAt,
-        response: json,
-      });
-      return { sent: true, messageId: json.messageId ?? null };
-    }
-    channelLog("browser.send_dm.error", {
-      externalId,
-      status: res.status,
-      durationMs: Date.now() - startedAt,
-      response: json,
-    });
-    return { sent: false, reason: "error", message: json.reason ?? "unknown" };
-  } catch (err: any) {
-    channelLog("browser.send_dm.error", {
-      externalId,
-      durationMs: Date.now() - startedAt,
-      error: err?.message ?? String(err),
-    });
-    return { sent: false, reason: "error", message: err?.message ?? String(err) };
-  }
 }

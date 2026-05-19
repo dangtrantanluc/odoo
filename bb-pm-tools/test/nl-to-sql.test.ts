@@ -1,5 +1,5 @@
-import { buildKnowledgeDocs, extractRetrievalHints, retrieveSqlKnowledge } from "../src/text-to-sql-kb";
-import { extractTables, validateGeneratedSql } from "../src/nl-to-sql";
+import { buildKnowledgeDocs, extractRetrievalHints, retrieveSqlKnowledge } from "../src/reporting/nl-to-sql/knowledge-base";
+import { extractTables, validateGeneratedSql } from "../src/reporting/nl-to-sql/translator";
 
 const schema = `### \`tasks\`\n\nCột: id: Int, name: String, status: enum:TaskStatus, deadline: DateTime?, assignee_id: Int?, project_id: Int, company_id: Int\n\n### \`projects\`\n\nCột: id: Int, name: String, status: enum:ProjectStatus, company_id: Int\n\n### \`users\`\n\nCột: id: Int, full_name: String, company_id: Int\n`;
 function ok(v: unknown, msg: string) { if (!v) throw new Error(msg); }

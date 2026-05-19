@@ -89,21 +89,6 @@ export const config = {
       "http://localhost:18789/api/plugins/gapo-agent/send",
     gapoSendToken: process.env.GAPO_SEND_TOKEN || "",
   },
-  // Browser-tools fallback (Sprint 3.5) — used when Gapo bot API can't
-  // initiate a DM (no thread). Off by default; both URL + token must be
-  // set for the fallback path to activate.
-  browserTools: {
-    sendDmUrl:
-      process.env.BROWSER_TOOLS_SEND_URL ||
-      "http://localhost:18789/api/plugins/browser-tools/send-dm",
-    findUserUrl:
-      process.env.BROWSER_TOOLS_FIND_URL ||
-      "http://localhost:18789/api/plugins/browser-tools/find-user",
-    findAndOpenDmUrl:
-      process.env.BROWSER_TOOLS_FIND_AND_OPEN_DM_URL ||
-      "http://localhost:18789/api/plugins/browser-tools/find-and-open-dm",
-    pluginToken: process.env.BROWSER_TOOLS_TOKEN || "",
-  },
   // Redis — used for follow-up cooldowns (Sprint 3) and rate limiting
   // (Sprint 6.2). Optional: if unset, cooldown + rate limit fall back to
   // in-process state (fine for single-instance dev; loses guarantees on
@@ -116,9 +101,6 @@ export const config = {
   rateLimit: {
     maxPerWindow: Number(process.env.AGENT_RUN_MAX_PER_WINDOW ?? 30),
     windowSec: Number(process.env.AGENT_RUN_WINDOW_SEC ?? 60),
-  },
-  orchestrator: {
-    maxToolSteps: Number(process.env.AGENT_MAX_STEPS || 2),
   },
   cron: {
     timezone: process.env.CRON_TZ || "Asia/Ho_Chi_Minh",

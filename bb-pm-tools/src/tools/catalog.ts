@@ -1,12 +1,6 @@
 import { bbPm } from "../infrastructure/api-client";
 import { cooldown } from "../cooldown";
-import {
-  sendToGapo,
-  sendDmViaBrowser,
-  findGapoUserViaBrowser,
-  findAndOpenDmViaBrowser,
-} from "../infrastructure/channel-client";
-import { extractMeetingFromTranscript } from "../meeting";
+import { sendToGapo } from "../infrastructure/channel-client";
 import { reportQueryTool } from "../reporting/report-query-tool";
 
 export type ToolDefinition<TArgs, TResult> = {
@@ -709,66 +703,6 @@ export const tools: ToolDefinition<any, any>[] = [
   },
 
   {
-    name: "find_gapo_user",
-    description:
-      "Search the Gapo Work organization for a user by name (Vietnamese supported). " +
-      "Use when the user references someone NOT in bb-pm DB (e.g. 'tìm Lực trên Gapo'). " +
-      "Returns matched display names only — to actually message someone use " +
-      "send_dm_to_gapo_user which finds + opens DM + sends in one step.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Name or substring to search Gapo org." },
-      },
-      required: ["query"],
-    },
-    handler: async (args: { query: string }) => {
-      const q = requireString(args.query, "query");
-      return await findGapoUserViaBrowser(q);
-    },
-  },
-
-  {
-    name: "send_dm_to_gapo_user",
-    description:
-      "Find a Gapo Work user by name and send them a DM. Atomic operation: " +
-      "(1) search org for the name, (2) click DM icon to open conversation, " +
-      "(3) type + send message. Use when user says 'nhắn cho X', 'gửi tin cho X' " +
-      "where X is a Gapo member. Returns conversationId on success so caller " +
-      "can reuse it. Throttled to 30 DMs/hour anti-spam.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Recipient name to search on Gapo." },
-        text: { type: "string", description: "Message text in Vietnamese, ≤2000 chars." },
-      },
-      required: ["query", "text"],
-    },
-    handler: async (args: { query: string; text: string }) => {
-      const q = requireString(args.query, "query");
-      const text = requireString(args.text, "text");
-
-      const found = await findAndOpenDmViaBrowser(q);
-      if ("error" in found) return { sent: false, reason: "error", message: found.error };
-      if ("found" in found && found.found === false) {
-        return { sent: false, reason: "user_not_found", query: q };
-      }
-      const { conversationId, name } = found as { conversationId: string; name: string };
-
-      const sendResult = await sendDmViaBrowser(conversationId, text);
-      if (!sendResult.sent) {
-        return { sent: false, reason: sendResult.reason, conversationId, name };
-      }
-      return {
-        sent: true,
-        conversationId,
-        name,
-        messageId: sendResult.messageId,
-      };
-    },
-  },
-
-  {
     name: "person_tasks",
     description: "Fast internal lookup for open tasks of a named person with caller permission checks.",
     parameters: {
@@ -939,40 +873,20 @@ export const tools: ToolDefinition<any, any>[] = [
         };
       }
 
-      // Try the bot API path first: look up an existing Gapo thread for
-      // the user, post via gapo-agent /send.
+      // Look up an existing Gapo thread for the user, post via gapo-agent
+      // /send. Không có thread → không gửi được, skip sạch.
       let threadId: string | null = null;
-      let externalId: string | null = null;
       try {
         const res = await bbPm.getGapoThread(args.userId);
         threadId = res.data.gapoThreadId;
-        externalId = res.data.gapoUserId;
       } catch (err: any) {
         if (!/404/.test(err?.message || "")) throw err;
-        // No Gapo thread → fall through to browser fallback.
       }
 
-      let deliveredVia: "gapo-bot" | "browser" | "none" = "none";
-
-      if (threadId) {
-        await sendToGapo(threadId, question);
-        deliveredVia = "gapo-bot";
-      } else {
-        // Browser fallback (Sprint 3.5). Needs an externalId — without
-        // one, even browser can't address the recipient. Skip cleanly.
-        if (!externalId) {
-          return { skipped: "no_gapo_thread" };
-        }
-        const fallback = await sendDmViaBrowser(externalId, question);
-        if (!fallback.sent) {
-          return {
-            skipped: "no_gapo_thread",
-            fallback: { reason: fallback.reason, message: fallback.message },
-          };
-        }
-        deliveredVia = "browser";
-        threadId = fallback.messageId; // best-effort handle for record
+      if (!threadId) {
+        return { skipped: "no_gapo_thread" };
       }
+      await sendToGapo(threadId, question);
 
       await cooldown.mark(key);
       let followUpId: number | undefined;
@@ -992,7 +906,7 @@ export const tools: ToolDefinition<any, any>[] = [
       return {
         sent: true,
         threadId,
-        deliveredVia,
+        deliveredVia: "gapo-bot",
         followUpId,
         cooldownSec: await cooldown.remainingSec(key),
       };
@@ -1154,110 +1068,6 @@ export const tools: ToolDefinition<any, any>[] = [
           taskIds: m.taskIds,
         })),
       };
-    },
-  },
-
-  // ── Sprint 5: Meeting Assistant ───────────────────
-  {
-    name: "ingest_meeting",
-    description:
-      "Nhận transcript hội họp → dùng LLM extract ra summary, decisions, participants, " +
-      "action items → lưu Meeting vào DB với items ở trạng thái DRAFT (chờ PM approve). " +
-      "GỌI KHI: user dán transcript dài, hoặc yêu cầu 'tóm tắt họp / trích action items'. " +
-      "KHÔNG tự approve — agent chỉ tạo DRAFT để PM review. Trả ra meetingId + số items.",
-    parameters: {
-      type: "object",
-      properties: {
-        transcript: {
-          type: "string",
-          description:
-            "Transcript text của cuộc họp (≤ 200_000 ký tự). Có thể là notes thô, không cần format sẵn.",
-        },
-        projectId: {
-          type: "integer",
-          description:
-            "Project scope nếu biết — items sẽ tạo task trong project này khi approve.",
-        },
-        title: { type: "string", description: "Optional: tiêu đề meeting." },
-      },
-      required: ["transcript"],
-    },
-    handler: async (args: { transcript: string; projectId?: number; title?: string }) => {
-      const transcript = requireString(args.transcript, "transcript");
-      if (transcript.length < 30) {
-        return { error: "Transcript quá ngắn để trích xuất có ý nghĩa." };
-      }
-      const extracted = await extractMeetingFromTranscript(transcript);
-      const res = await bbPm.createMeeting({
-        title: args.title ?? extracted.title,
-        transcript,
-        summary: extracted.summary || undefined,
-        decisions: extracted.decisions,
-        participants: extracted.participants,
-        projectId: args.projectId,
-        items: extracted.actionItems.map((it) => ({
-          title: it.title,
-          description: it.description,
-          ownerName: it.ownerName,
-          dueDate: it.dueDate,
-          priority: it.priority,
-        })),
-      });
-      return {
-        meetingId: res.data.id,
-        summary: res.data.summary,
-        decisions: res.data.decisions,
-        participants: res.data.participants,
-        items: res.data.items.map((it) => ({
-          id: it.id,
-          title: it.title,
-          ownerName: it.ownerName,
-          ownerUserId: it.ownerUserId,
-          ownerResolved: it.ownerUserId !== null,
-          dueDate: it.dueDate,
-          priority: it.priority,
-          status: it.status,
-        })),
-        note: "Items đang ở trạng thái DRAFT. User cần approve (tool approve_meeting_items) trước khi tạo task thật.",
-      };
-    },
-  },
-
-  {
-    name: "approve_meeting_items",
-    description:
-      "Approve các action items từ một Meeting đã ingest → tạo Task trong project tương ứng. " +
-      "GỌI KHI user đã review DRAFT items và đồng ý tạo task. Yêu cầu meetingId + " +
-      "danh sách itemIds. Nếu meeting chưa có projectId, truyền defaultProjectId.",
-    parameters: {
-      type: "object",
-      properties: {
-        meetingId: { type: "integer" },
-        itemIds: {
-          type: "array",
-          items: { type: "integer" },
-          description: "ID của action items muốn approve (lấy từ ingest_meeting result).",
-        },
-        defaultProjectId: {
-          type: "integer",
-          description: "Project để tạo task nếu meeting chưa có projectId.",
-        },
-      },
-      required: ["meetingId", "itemIds"],
-    },
-    handler: async (args: {
-      meetingId: number;
-      itemIds: number[];
-      defaultProjectId?: number;
-    }) => {
-      if (!Array.isArray(args.itemIds) || args.itemIds.length === 0) {
-        return { error: "itemIds phải là mảng không rỗng." };
-      }
-      const res = await bbPm.approveMeetingItems(args.meetingId, {
-        itemIds: args.itemIds,
-        defaultProjectId: args.defaultProjectId,
-      });
-      return res.data;
     },
   },
 
@@ -1476,9 +1286,8 @@ export const tools: ToolDefinition<any, any>[] = [
   {
     name: "messages.broadcast",
     description:
-      "[ACTION/v2/BULK] Gửi tin nhắn cùng template cho N recipients đồng thời. " +
-      "1 LLM call → N parallel send (Gapo bot path 200ms each, browser path " +
-      "10s + throttle 30/h). Dùng khi PM 'nhắc tất cả overdue', 'thông báo " +
+      "[ACTION/v2/BULK] Gửi tin nhắn cùng template cho N task assignees đồng thời. " +
+      "Dùng khi PM 'nhắc tất cả overdue', 'thông báo " +
       "deadline', 'reminder weekly'. MAX 30 recipients/call (anti-spam guard). " +
       "Template hỗ trợ {{var}} placeholders fill từ recipient.params.\n" +
       "SAFETY: BẮT BUỘC confirm với user TRƯỚC. Mô tả: 'sẽ gửi N tin cho " +
@@ -1496,10 +1305,8 @@ export const tools: ToolDefinition<any, any>[] = [
               to: {
                 type: "object",
                 properties: {
-                  kind: { type: "string", enum: ["task_assignee", "bb_user", "gapo_query"] },
+                  kind: { type: "string", enum: ["task_assignee"] },
                   taskId: { type: "integer" },
-                  userId: { type: "integer" },
-                  query: { type: "string" },
                 },
                 required: ["kind"],
               },
@@ -1665,10 +1472,8 @@ export const tools: ToolDefinition<any, any>[] = [
   {
     name: "message.send",
     description:
-      "[ACTION/v2] Gửi tin nhắn tới recipient — polymorphic. " +
-      "to.kind='task_assignee': nhắc assignee về task (cooldown 24h, log follow_up). " +
-      "to.kind='bb_user': nhắn DM tới bb-pm user (đã có trong DB). " +
-      "to.kind='gapo_query': tìm + nhắn user qua tên trên Gapo (browser-driven, throttle 30/h). " +
+      "[ACTION/v2] Nhắc assignee về một task (to.kind='task_assignee'): " +
+      "resolve assignee → gửi qua send_follow_up (cooldown 24h, log follow_up). " +
       "SAFETY: LUÔN confirm trước khi send (mô tả 'sẽ gửi cho ai, nội dung gì' rồi đợi user OK).",
     parameters: {
       type: "object",
@@ -1676,10 +1481,8 @@ export const tools: ToolDefinition<any, any>[] = [
         to: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["task_assignee", "bb_user", "gapo_query"] },
+            kind: { type: "string", enum: ["task_assignee"] },
             taskId: { type: "integer", description: "Khi kind=task_assignee." },
-            userId: { type: "integer", description: "Khi kind=bb_user — bb-pm userId." },
-            query: { type: "string", description: "Khi kind=gapo_query — tên search Gapo." },
           },
           required: ["kind"],
         },
@@ -1710,23 +1513,6 @@ export const tools: ToolDefinition<any, any>[] = [
         return await followUp.handler({ userId: assigneeId, taskId: args.to.taskId, question: text });
       }
 
-      if (kind === "bb_user") {
-        if (!args.to.userId) return { error: "to.userId required for bb_user" };
-        // Look up gapo thread, send via gapo bot path
-        const fu = toolsByName.get("send_follow_up");
-        if (!fu) return { error: "send_follow_up tool unavailable" };
-        // Use a synthetic taskId? send_follow_up requires taskId for cooldown.
-        // For free-form bb_user message, route through browser DM directly.
-        return { error: "bb_user kind not supported — use kind=gapo_query với name của user, hoặc task_assignee với taskId" };
-      }
-
-      if (kind === "gapo_query") {
-        if (!args.to.query) return { error: "to.query required for gapo_query" };
-        const dm = toolsByName.get("send_dm_to_gapo_user");
-        if (!dm) return { error: "send_dm_to_gapo_user tool unavailable" };
-        return await dm.handler({ query: args.to.query, text });
-      }
-
       return { error: `Unknown to.kind: ${kind}` };
     },
   },
@@ -1752,24 +1538,6 @@ export const tools: ToolDefinition<any, any>[] = [
         replyText: args.replyText,
       });
       return res.data;
-    },
-  },
-
-  // ── ACTION: gapo.* ────────────────────────────────
-  {
-    name: "gapo.find_user",
-    description:
-      "[ACTION/v2] Tìm user trên Gapo Work org bằng tên (VN supported). " +
-      "Browser-driven (không qua DB). Trả ra danh sách matched names. " +
-      "Để gửi DM thẳng, dùng message.send với to.kind='gapo_query'.",
-    parameters: {
-      type: "object",
-      properties: { query: { type: "string" } },
-      required: ["query"],
-    },
-    handler: async (args: { query: string }) => {
-      const q = requireString(args.query, "query");
-      return await findGapoUserViaBrowser(q);
     },
   },
 

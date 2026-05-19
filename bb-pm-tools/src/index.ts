@@ -60,5 +60,4 @@ export function register(api: any) {
 
 export default { register };
 
-export { runAgent } from "./orchestrator";
 export { tools } from "./tools";

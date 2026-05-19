@@ -6,7 +6,7 @@ type RunMode =
   | "text_to_sql"
   | "keyword_fallback"
   | "ambiguous_read"
-  | "react_fallback"
+  | "no_match"
   | "llm"
   | "dedup"
   | "rate_limited"
@@ -23,8 +23,6 @@ export type AgentRunSample = {
   callerResolveMs?: number;
   memoryRecallMs?: number;
   schemaDocMs?: number;
-  runAgentMs?: number;
-  formatterMs?: number;
   fastPathMs?: number;
   llmCalls: AgentLlmTrace[];
   toolCalls: AgentToolTrace[];
@@ -93,8 +91,6 @@ export function recordAgentRunSample(args: {
     callerResolveMs: args.timings?.callerResolveMs,
     memoryRecallMs: args.timings?.memoryRecallMs,
     schemaDocMs: args.timings?.schemaDocMs,
-    runAgentMs: args.timings?.runAgentMs,
-    formatterMs: args.timings?.formatterMs,
     fastPathMs: args.timings?.fastPathMs,
     llmCalls: args.timings?.llmCalls ?? [],
     toolCalls,
@@ -108,9 +104,7 @@ export function recordAgentRunSample(args: {
 export function getTelemetrySnapshot() {
   const totalMs = samples.map((s) => s.totalMs);
   const queueWaitMs = samples.map((s) => s.queueWaitMs ?? 0).filter((x) => x > 0);
-  const formatterMs = samples.map((s) => s.formatterMs ?? 0).filter((x) => x > 0);
   const fastPathMs = samples.map((s) => s.fastPathMs ?? 0).filter((x) => x > 0);
-  const llmRunMs = samples.map((s) => s.runAgentMs ?? 0).filter((x) => x > 0);
   const llmCallMs = samples.flatMap((s) => s.llmCalls.map((c) => c.latencyMs));
 
   const byMode = Object.fromEntries(
@@ -124,9 +118,7 @@ export function getTelemetrySnapshot() {
     sampleSize: samples.length,
     totalMs: aggregate(totalMs),
     queueWaitMs: aggregate(queueWaitMs),
-    formatterMs: aggregate(formatterMs),
     fastPathMs: aggregate(fastPathMs),
-    runAgentMs: aggregate(llmRunMs),
     llmCallMs: aggregate(llmCallMs),
     byMode,
     recent: samples.slice(-10),

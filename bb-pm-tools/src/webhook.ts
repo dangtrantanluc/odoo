@@ -1,13 +1,10 @@
 import { IncomingMessage, ServerResponse } from "http";
-import { runAgent } from "./orchestrator";
 import type { AgentContext } from "./types";
 import { checkRateLimit } from "./rate-limit";
 import { checkDuplicate } from "./dedup";
-import { acquireSlot, getMetrics } from "./concurrency";
+import { getMetrics } from "./concurrency";
 import { stripMarkdownForGapo } from "./channel-out";
-import { formatResponse } from "./formatter";
 import { tryFastPath, executeFastPath } from "./pre-classifier";
-import { recordRecentTurn } from "./memory";
 import { getTelemetrySnapshot, recordAgentRunSample } from "./telemetry";
 import { getCachedGapoUser } from "./caller-cache";
 import { getCheckinTelemetrySnapshot, handleCheckinTurn } from "./checkin";
@@ -15,10 +12,10 @@ import { handleActionTurn } from "./action-router";
 import { tryTextToSqlRead } from "./read-router";
 
 /**
- * Channel-agnostic agent entry point. Any channel plugin (Gapo, Slack,
+ * Channel-agnostic turn entry point. Any channel plugin (Gapo, Slack,
  * Telegram…) POSTs here with { text, correlationId?, source? } and receives
  * { reply }. Channels own their own inbound parsing + outbound delivery;
- * this plugin only orchestrates the LLM + tools.
+ * this plugin routes the turn through check-in / action / fast-path / NL-read.
  *
  * OpenClaw injects raw Node.js IncomingMessage / ServerResponse via its
  * plugin SDK registerHttpRoute contract, so we parse the body manually.
@@ -212,7 +209,6 @@ export async function handleAgentRun(
           const checkinReply = await handleCheckinTurn(text, ctx);
           if (checkinReply) {
             const reply = stripMarkdownForGapo(checkinReply.reply);
-            recordRecentTurn(ctx.conversationId, text, reply);
             recordAgentRunSample({
               requestId,
               source: ctx.source,
@@ -249,13 +245,10 @@ export async function handleAgentRun(
             toolArgs: fp.toolArgs ?? {},
           });
           const fpReply = await executeFastPath(fp, ctx);
-          // SKIP formatter cho fast-path: output đã chat-ready (hand-formatted
-          // theo pattern). Đẩy qua formatter sẽ trigger LLM rewrite (~30s
-          // Qwen) cho output > 350 chars → defeat purpose của fast-path.
-          // Vẫn strip markdown để Gapo render sạch.
+          // Fast-path output đã chat-ready (hand-formatted theo pattern);
+          // chỉ strip markdown để Gapo render sạch.
           const reply = stripMarkdownForGapo(fpReply);
           if (ctx.timings) ctx.timings.fastPathMs = Date.now() - fpStart;
-          recordRecentTurn(ctx.conversationId, text, reply);
           recordAgentRunSample({
             requestId,
             source: ctx.source,
@@ -322,84 +315,30 @@ export async function handleAgentRun(
       }
     }
 
-    // Sprint 8 Phase #4 — concurrency limiter. Cap in-flight ở vLLM safe
-    // batch size (~6) để tránh timeout cascade khi peak burst. Reject 503
-    // nếu queue cũng full, caller (Gapo webhook) đã ack source thì user
-    // không bị treo — chỉ Gapo retry sau retryAfterSec.
-    const queueStart = Date.now();
-    const slot = await acquireSlot();
-    if (ctx.timings) ctx.timings.queueWaitMs = Date.now() - queueStart;
-    if (!slot.ok) {
-      recordAgentRunSample({
-        requestId,
-        source: ctx.source,
-        mode: "overloaded",
-        totalMs: Date.now() - startTurn,
-        timings: ctx.timings,
-        toolCalls: ctx.trace?.toolCalls,
-        error: slot.reason,
-      });
-      console.warn(
-        `[bb-pm-tools] agent/run rejected requestId=${requestId} reason=${slot.reason} ` +
-          `metrics=${JSON.stringify(getMetrics())}`,
-      );
-      res.setHeader("Retry-After", String(slot.retryAfterSec));
-      writeJson(res, 503, {
-        error: "agent_overloaded",
-        reason: slot.reason,
-        retryAfterSec: slot.retryAfterSec,
-        requestId,
-      });
-      return true;
-    }
-
-    const start = Date.now();
-    let rawReply: string;
-    try {
-      rawReply = await runAgent(text, ctx);
-      if (ctx.timings) ctx.timings.runAgentMs = Date.now() - start;
-    } finally {
-      slot.release();
-    }
-    // Sprint 8 Phase #5 — formatter layer. Biến raw agent output (có thể
-    // còn lộ DB term, JSON, error) thành reply chat-ready: skip nếu đã
-    // sạch, match template nếu khớp keyword, LLM Qwen rewrite cho free-form.
-    // Skip cho cli/eval source. Fail-safe: nếu fail/timeout → trả raw.
-    const formatterStart = Date.now();
-    const formatted = await formatResponse(rawReply, ctx, text);
-    if (ctx.timings) ctx.timings.formatterMs = Date.now() - formatterStart;
-    // Strip markdown markers (**, __, ~~, `, # headers) — defense in depth
-    // sau formatter để chắc chắn Gapo không thấy raw markup.
-    const reply = stripMarkdownForGapo(formatted);
+    // No-match fallback. Bot chỉ phục vụ check-in, action, slash/fast-path
+    // và NL-read; không còn ReAct LLM agent. Turn nào không lớp nào bắt
+    // được → trả hướng dẫn ngắn thay vì đẩy vào LLM.
+    const reply =
+      "Mình chưa hiểu yêu cầu này. Gõ /help để xem các lệnh, hoặc /checkin để cập nhật worklog.";
     recordAgentRunSample({
       requestId,
       source: ctx.source,
-      mode: "react_fallback",
+      mode: "no_match",
       totalMs: Date.now() - startTurn,
       replyBytes: reply.length,
       timings: ctx.timings,
       toolCalls: ctx.trace?.toolCalls,
     });
-    const m = getMetrics();
     console.log(
-      `[bb-pm-tools] agent/run ok requestId=${requestId} source=${ctx.source} ` +
-        `tookMs=${Date.now() - start} totalMs=${Date.now() - startTurn} bytes=${reply.length} ` +
-        `queueWaitMs=${ctx.timings?.queueWaitMs ?? 0} runAgentMs=${ctx.timings?.runAgentMs ?? 0} ` +
-        `formatterMs=${ctx.timings?.formatterMs ?? 0} llmCalls=${(ctx.timings?.llmCalls ?? [])
-          .map((c) => `${c.label}:${c.latencyMs}`)
-          .join(",") || "0"} ` +
-        `inFlight=${m.inFlight} queue=${m.queueDepth}`,
+      `[bb-pm-tools] agent/run no_match requestId=${requestId} source=${ctx.source} ` +
+        `totalMs=${Date.now() - startTurn} bytes=${reply.length}`,
     );
-    webhookLog("agent_run.response", {
+    webhookLog("agent_run.no_match", {
       requestId,
       source: ctx.source,
       durationMs: Date.now() - startTurn,
-      runAgentMs: ctx.timings?.runAgentMs ?? 0,
-      formatterMs: ctx.timings?.formatterMs ?? 0,
+      text,
       reply,
-      replyChars: reply.length,
-      toolCalls: ctx.trace?.toolCalls ?? [],
-      llmCalls: ctx.timings?.llmCalls ?? [],
     });
     writeJson(res, 200, { reply, requestId });
     return true;

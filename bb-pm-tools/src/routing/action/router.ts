@@ -9,8 +9,7 @@ type PendingAction =
   | { kind: "deadline"; taskId: number; taskName: string; deadline: string }
   | { kind: "assign"; taskId: number; taskName: string; assigneeId: number; assigneeName: string }
   | { kind: "status"; taskId: number; taskName: string; status: "DONE" | "REVIEW" }
-  | { kind: "create"; projectId: number; projectName: string; name: string }
-  | { kind: "message"; recipientQuery: string; text: string };
+  | { kind: "create"; projectId: number; projectName: string; name: string };
 type ProjectDraft = {
   name?: string;
   description?: string;
@@ -77,13 +76,6 @@ export async function handleActionTurn(text: string, ctx: AgentContext): Promise
     return { reply: `Sẽ tạo task "${action.name}" trong ${p.name}. Gõ "ok" để xác nhận.`, pattern: "action:create:preview" };
   }
 
-  const message = text.match(/^\s*(?:nhắn|nhan|gửi\s+tin|gui\s+tin)\s+cho\s+(.+?)\s+(?:hỏi|hoi)\s+(.+?)\s*$/iu);
-  if (message) {
-    const action: PendingAction = { kind: "message", recipientQuery: message[1].trim(), text: message[2].trim() };
-    save(key, action);
-    return { reply: `Sẽ nhắn cho ${action.recipientQuery}: "${action.text}". Gõ "ok" để xác nhận.`, pattern: "action:message:preview" };
-  }
-
   const draft = parseProjectCreate(text, ctx.callerUserId);
   if (draft) return await startProjectCreate(key, draft);
   return null;
@@ -112,18 +104,6 @@ async function execute(action: PendingAction): Promise<ActionTurnResult> {
   if (action.kind === "deadline") { await bbPm.patchTask(action.taskId, { deadline: action.deadline }); return { reply: `Đã đổi deadline task "${action.taskName}" sang ${action.deadline}.`, pattern: "action:deadline:done" }; }
   if (action.kind === "assign") { await bbPm.patchTask(action.taskId, { assigneeId: action.assigneeId }); return { reply: `Đã giao task "${action.taskName}" cho ${action.assigneeName}.`, pattern: "action:assign:done" }; }
   if (action.kind === "status") { await bbPm.updateTaskStatus(action.taskId, action.status); return { reply: `Đã chuyển task "${action.taskName}" sang ${action.status}.`, pattern: "action:status:done" }; }
-  if (action.kind === "message") {
-    const sender = toolsByName.get("message.send");
-    if (!sender) return { reply: "Hiện chưa gửi được tin nhắn vì công cụ nhắn tin chưa sẵn sàng.", pattern: "action:message:unavailable" };
-    try {
-      const result: any = await sender.handler({ to: { kind: "gapo_query", query: action.recipientQuery }, text: action.text });
-      if (result?.sent) return { reply: `Đã nhắn cho ${result.name || action.recipientQuery}.`, pattern: "action:message:done" };
-      if (result?.reason === "user_not_found") return { reply: `Không tìm thấy ${action.recipientQuery} trên Gapo.`, pattern: "action:message:not_found" };
-      return { reply: `Chưa gửi được tin cho ${action.recipientQuery}; luồng nhắn tin đang lỗi tạm thời.`, pattern: "action:message:failed" };
-    } catch {
-      return { reply: `Chưa gửi được tin cho ${action.recipientQuery}; luồng nhắn tin đang lỗi tạm thời.`, pattern: "action:message:failed" };
-    }
-  }
   await bbPm.createActionItem({ projectId: action.projectId, name: action.name });
   return { reply: `Đã tạo task "${action.name}" trong ${action.projectName}.`, pattern: "action:create:done" };
 }

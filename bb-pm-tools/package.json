@@ -14,10 +14,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "tsc --watch",
     "cli": "tsx src/cli.ts",
-    "bench": "tsx src/bench-llm.ts",
-    "eval": "tsx src/eval-runner.ts",
-    "test": "tsx test/formatter.test.ts && tsx test/pre-classifier.test.ts && tsx test/nl-to-sql.test.ts && tsx test/read-router.test.ts && tsx test/action-router.test.ts && tsx test/checkin.test.ts && tsx test/webhook.test.ts && tsx test/shared-text.test.ts && tsx test/tool-catalog.test.ts",
-    "test:formatter": "tsx test/formatter.test.ts",
+    "test": "tsx test/pre-classifier.test.ts && tsx test/nl-to-sql.test.ts && tsx test/read-router.test.ts && tsx test/action-router.test.ts && tsx test/checkin.test.ts && tsx test/webhook.test.ts && tsx test/shared-text.test.ts && tsx test/tool-catalog.test.ts",
     "test:pre-classifier": "tsx test/pre-classifier.test.ts"
   },
   "dependencies": {

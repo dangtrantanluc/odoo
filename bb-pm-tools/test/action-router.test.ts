@@ -11,8 +11,6 @@ const orig = { findTask: bbPm.findTask, findUser: bbPm.findUser, findProject: bb
 (bbPm as any).updateTaskStatus = async () => ({ data: { status: "DONE" } });
 (bbPm as any).createActionItem = async () => ({ data: { id: 9 } });
 const ctx: any = { conversationId: "c1", callerUserId: 5 };
-const messageSend = toolsByName.get("message.send")!;
-const origMessageSend = messageSend.handler;
 const projectCreate = toolsByName.get("project.create")!;
 const origProjectCreate = projectCreate.handler;
 (async () => {
@@ -24,9 +22,6 @@ const origProjectCreate = projectCreate.handler;
   assert.equal((await handleActionTurn("đánh dấu task API login done", ctx))?.pattern, "action:status:preview");
   assert.equal((await handleActionTurn("ok", ctx))?.pattern, "action:status:done");
   assert.equal((await handleActionTurn("tạo task viết spec trong project MTL", ctx))?.pattern, "action:create:preview");
-  (messageSend as any).handler = async () => ({ sent: true, name: "Trường" });
-  assert.equal((await handleActionTurn("nhắn cho Trường hỏi tiến độ như nào", ctx))?.pattern, "action:message:preview");
-  assert.equal((await handleActionTurn("ok", ctx))?.pattern, "action:message:done");
 
   let createdArgs: any = null;
   (projectCreate as any).handler = async (args: any) => {
@@ -56,6 +51,5 @@ const origProjectCreate = projectCreate.handler;
   assert.equal((await handleActionTurn("ok", ctx))?.pattern, "action:project_create:done");
   console.log("action-router tests passed");
   Object.assign(bbPm, orig);
-  (messageSend as any).handler = origMessageSend;
   (projectCreate as any).handler = origProjectCreate;
 })();

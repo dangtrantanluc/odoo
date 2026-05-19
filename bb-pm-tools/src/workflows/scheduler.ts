@@ -1,6 +1,5 @@
 import cron, { ScheduledTask } from "node-cron";
-import { runAgent } from "../orchestrator";
-import { notifyAdmin, sendToGapo } from "../infrastructure/channel-client";
+import { notifyAdmin } from "../infrastructure/channel-client";
 import { config } from "../shared/config";
 import { bbPm } from "../infrastructure/api-client";
 import { runWorkflow } from "./registry";
@@ -8,13 +7,13 @@ import { runWorkflow } from "./registry";
 type LegacyCronJob = {
   name: string;
   schedule: string;
-  prompt: string;
+  workflow: string;
   target: string; // Gapo conversation id
-  source: "cron";
 };
 
-// Legacy hardcoded jobs (giữ backward compat — sẽ retire khi migration to
+// Legacy env-based jobs (giữ backward compat — sẽ retire khi migration to
 // Automation table xong cho tất cả tenant). Active nếu env CRON_*_TARGET set.
+// Chạy workflow có tên (không gọi LLM) thay vì ReAct agent.
 function parseLegacyJobs(): LegacyCronJob[] {
   const jobs: LegacyCronJob[] = [];
 
@@ -22,31 +21,8 @@ function parseLegacyJobs(): LegacyCronJob[] {
     jobs.push({
       name: "daily-digest-legacy",
       schedule: config.cron.dailyDigest.schedule,
-      prompt:
-        "Daily standup 9:00 sáng. Gọi generate_daily_digest + list_overdue_tasks " +
-        "+ list_stale_tasks. Trình bày tin cho cả team đọc:\n" +
-        "1. **Tổng quan hôm nay** (số task active, done hôm qua, sắp deadline).\n" +
-        "2. **Task quá hạn** (nhóm theo assignee, ai có nhiều task overdue → highlight).\n" +
-        "3. **Task lâu chưa update** (>14 ngày, nhắc owner check).\n" +
-        "4. **Task có deadline trong tuần** (ai đang gấp).\n" +
-        "5. Mention người được nhắc: dùng tag @<tên>.\n" +
-        "Giọng ngắn gọn, dùng bullet, emoji vừa phải. Không quá 1500 chars.",
+      workflow: "daily_digest",
       target: config.cron.dailyDigest.target,
-      source: "cron",
-    });
-  }
-
-  if (config.cron.weeklyHygiene.target && config.cron.weeklyHygiene.schedule) {
-    jobs.push({
-      name: "weekly-hygiene-legacy",
-      schedule: config.cron.weeklyHygiene.schedule,
-      prompt:
-        "Thông báo đầu tuần cho cả team. Gọi generate_weekly_report + check_data_hygiene. " +
-        "Trình bày ngắn gọn: 1) kết quả tuần qua, 2) task/blocker cần chú ý, " +
-        "3) hygiene task thiếu owner/deadline/lâu chưa update, 4) ưu tiên đầu tuần. " +
-        "Mention người liên quan bằng @<tên>. Không quá 1500 chars.",
-      target: config.cron.weeklyHygiene.target,
-      source: "cron",
     });
   }
 
@@ -79,12 +55,13 @@ function registerLegacyJob(job: LegacyCronJob) {
     const startedAt = new Date();
     console.log(`[bb-pm-tools] cron ${job.name} fired at ${startedAt.toISOString()}`);
     try {
-      const answer = await runAgent(job.prompt, {
+      const result = await runWorkflow(job.workflow, {}, {
         source: "cron",
+        target: job.target,
         correlationId: `${job.name}-${startedAt.getTime()}`,
       });
-      await sendToGapo(job.target, answer);
-      console.log(`[bb-pm-tools] cron ${job.name} sent (${answer.length} chars) → ${job.target}`);
+      console.log(`[bb-pm-tools] cron ${job.name} ${result.ok ? "OK" : "ERROR"}: ${result.message}`);
+      if (!result.ok) void notifyAdmin(`Cron "${job.name}" failed`, result.error ?? result.message);
     } catch (err: any) {
       console.error(`[bb-pm-tools] cron ${job.name} failed:`, err?.message || err);
       void notifyAdmin(`Cron "${job.name}" failed`, err);

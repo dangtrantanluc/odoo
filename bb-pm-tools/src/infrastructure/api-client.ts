@@ -822,66 +822,6 @@ class BbPmClient {
     }>("/agent/memory/search", args);
   }
 
-  // ── Meetings (Sprint 5) ───────────────────────────
-  createMeeting(body: {
-    title?: string;
-    heldAt?: string;
-    transcript: string;
-    summary?: string;
-    decisions?: string[];
-    participants?: string[];
-    projectId?: number;
-    items?: Array<{
-      title: string;
-      description?: string;
-      ownerName?: string;
-      dueDate?: string;
-      priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-    }>;
-  }) {
-    return this.post<{
-      data: {
-        id: number;
-        title: string | null;
-        heldAt: string;
-        projectId: number | null;
-        summary: string | null;
-        decisions: string[];
-        participants: string[];
-        items: Array<{
-          id: number;
-          title: string;
-          description: string | null;
-          ownerName: string | null;
-          ownerUserId: number | null;
-          dueDate: string | null;
-          priority: string;
-          status: string;
-          createdTaskId: number | null;
-        }>;
-      };
-    }>("/meetings", body);
-  }
-
-  getMeeting(id: number) {
-    return this.get<{ data: any }>(`/meetings/${id}`);
-  }
-
-  approveMeetingItems(meetingId: number, body: { itemIds: number[]; defaultProjectId?: number }) {
-    return this.post<{
-      data: {
-        meetingId: number;
-        projectId: number;
-        created: Array<{ itemId: number; taskId: number }>;
-        skipped: Array<{ itemId: number; reason: string }>;
-      };
-    }>(`/meetings/${meetingId}/approve`, body);
-  }
-
-  rejectMeetingItems(meetingId: number, body: { itemIds: number[] }) {
-    return this.post<{ data: { rejected: number } }>(`/meetings/${meetingId}/reject`, body);
-  }
-
   // ── Agent: Follow-up tracking (Sprint 6.2) ────────
   recordFollowUp(body: {
     taskId: number;

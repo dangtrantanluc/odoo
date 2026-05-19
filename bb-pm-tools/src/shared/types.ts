@@ -18,8 +18,6 @@ export type AgentTimingTrace = {
   callerResolveMs?: number;
   memoryRecallMs?: number;
   schemaDocMs?: number;
-  runAgentMs?: number;
-  formatterMs?: number;
   fastPathMs?: number;
   llmCalls: AgentLlmTrace[];
 };
@@ -40,21 +38,16 @@ export type AgentContext = {
    */
   skipChannelAck?: boolean;
   /**
-   * Resolved caller's bb-pm userId (Sprint 8 Day 3). Populated từ
-   * resolveCaller() before runAgentInternal — pre-classifier dùng để
-   * scope "task của tôi". null nếu caller chưa map vào bb-pm DB.
+   * Resolved caller's bb-pm userId. Resolved khi xử lý turn — fast-path /
+   * action-router dùng để scope "task của tôi". null nếu caller chưa map
+   * vào bb-pm DB.
    */
   callerUserId?: number;
-  /**
-   * If set, orchestrator pushes each tool call into trace.toolCalls.
-   * Used by eval-runner to assert tool selection without coupling to audit.
-   * Mutated in place — caller reads after runAgent returns.
-   */
+  /** Tool calls trong turn, push vào để telemetry/audit đọc lại. */
   trace?: { toolCalls: AgentToolTrace[] };
   /**
-   * Per-request timing trace. Populated by webhook/orchestrator for ops
-   * visibility so we can see where latency is spent without turning on a
-   * profiler in production.
+   * Per-request timing trace. Populated bởi webhook để quan sát latency
+   * mà không cần bật profiler ở production.
    */
   timings?: AgentTimingTrace;
 };
