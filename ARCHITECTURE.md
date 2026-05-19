@@ -21,12 +21,12 @@ Tài liệu liên quan:
  ┌──────────────────────────────────────────────────────────────────────┐
  │  openclaw  (Node 22, container)                                      │
  │  ├─ OpenClaw gateway :18789                                          │
- │  ├─ plugin gapo-work      (channel adapter thuần)                    │
- │  │    POST /api/plugins/gapo-work/webhook     ←── inbound Gapo       │
- │  │    POST /api/plugins/gapo-work/send        ←── outbound đi qua    │
+ │  ├─ plugin gapo-agent     (channel adapter thuần)                    │
+ │  │    POST /api/plugins/gapo-agent/webhook    ←── inbound Gapo       │
+ │  │    POST /api/plugins/gapo-agent/send       ←── outbound đi qua    │
  │  └─ plugin bb-pm-tools    (PM orchestrator)                          │
  │       POST /api/plugins/bb-pm/agent/run       ←── LLM ReAct          │
- │       cron  digest / hygiene                  ───▶ gapo-work /send   │
+ │       cron  digest / hygiene                  ───▶ gapo-agent /send  │
  └───────────┬──────────────────────────────┬─────────────────┬─────────┘
              │ X-Agent-Token                │ /v1/chat/...   │
              ▼                              ▼                │
@@ -49,7 +49,7 @@ Ranh giới layer (nguyên tắc cứng):
 
 | Layer | Sở hữu | KHÔNG chứa |
 |---|---|---|
-| **Channels** (`gapo-work`) | Gapo bot credential (`GAPO_BOT_TOKEN`), parse/gửi tin Gapo | LLM call, PM logic, DB |
+| **Channels** (`gapo-agent`) | Gapo bot credential (`GAPO_BOT_TOKEN`), parse/gửi tin Gapo | LLM call, PM logic, DB |
 | **Orchestrator** (`bb-pm-tools`) | `BB_PM_AGENT_TOKEN`, LLM key, ReAct loop, tool catalog, cron, cooldown | Channel credential, DB schema |
 | **Backend** (`bb_pm_api`) | `AGENT_API_TOKEN`, `JWT_SECRET`, schema + state machine, company scoping | Chat state, prompt |
 
@@ -75,7 +75,7 @@ openclaw   ──▶  bb_pm_api:4000/api/v1      (X-Agent-Token)
 bb_pm_api  ──▶  bb_pm_db:5432               (Postgres)
 bb_pm_web  ──▶  browser → localhost:4000   (CORS)
 openclaw   ──▶  host.docker.internal:8000  (LLM — tailnet/host)
-gapo-work  ──▶  localhost:18789             (same-container, inter-plugin)
+gapo-agent ──▶  localhost:18789             (same-container, inter-plugin)
 ```
 
 `extra_hosts: host.docker.internal:host-gateway` trên service `openclaw` để container với ra được LLM endpoint host/tailnet (Linux docker).
@@ -88,7 +88,7 @@ Mỗi secret **chỉ sống ở 1 layer**. Hai secret chia sẻ giữa 2 layer q
 
 ```
 ┌────────────┐                          ┌────────────┐                          ┌────────────┐
-│ gapo-work  │  ── X-Plugin-Token ───▶  │ bb-pm-tools│  ── X-Agent-Token ─────▶ │ bb_pm_api  │
+│ gapo-agent │  ── X-Plugin-Token ───▶  │ bb-pm-tools│  ── X-Agent-Token ─────▶ │ bb_pm_api  │
 │            │  ◀── /agent/run body ──  │            │  ◀── JSON data ─────────  │            │
 └────────────┘                          └────────────┘                          └────────────┘
      │                                       │                                       │
@@ -104,7 +104,7 @@ Giá trị cụ thể (generate bằng `openssl rand -hex 32`):
 |---|---|---|
 | `AGENT_API_TOKEN` | `bb_pm_api`, `openclaw` (as `BB_PM_AGENT_TOKEN`) | Agent service user auth |
 | `GAPO_SEND_TOKEN` | `openclaw` (2 plugin cùng đọc) | Inter-plugin outbound |
-| `GAPO_BOT_TOKEN` | `openclaw` (gapo-work) | Gapo bot API |
+| `GAPO_BOT_TOKEN` | `openclaw` (gapo-agent) | Gapo bot API |
 | `JWT_SECRET` | `bb_pm_api` | Human JWT |
 | `OPENCLAW_GATEWAY_TOKEN` | `openclaw` | Admin RPC |
 | `LLM_API_KEY` | `openclaw` | LLM provider |
@@ -115,7 +115,7 @@ File `.env` ở root repo cho docker-compose đọc; không commit (xem [.gitign
 Bên trong container openclaw, entrypoint tự seed:
 - `/root/.openclaw/openclaw.json` (gateway + model provider)
 - `/root/.openclaw/plugins/bb-pm-tools/.env` (plugin env)
-- `/root/.openclaw/plugins/gapo-work/config.json` (gapo bot + sendToken + orchestrator URL)
+- `/root/.openclaw/plugins/gapo-agent/.env` (gapo bot + sendToken + orchestrator URL)
 
 Những file này được mount ra volume `openclaw_home` nên persist qua container rebuild. Seed **chỉ ghi khi file chưa tồn tại** — không overwrite customization.
 
@@ -128,7 +128,7 @@ Những file này được mount ra volume `openclaw_home` nên persist qua cont
 ```
 PM ──"task nào quá hạn?"─▶ Gapo bot ──webhook──▶ openclaw:18789
                                                       │
-                             gapo-work/webhook: parse Gapo payload
+                             gapo-agent/webhook: parse Gapo payload
                                                       │ HTTP
                                                       ▼
                              bb-pm-tools/agent/run: runAgent(text)
@@ -143,7 +143,7 @@ PM ──"task nào quá hạn?"─▶ Gapo bot ──webhook──▶ openclaw:
                                 ├─ chat(...) lần 2 → LLM compose text VN
                                 └─ return { reply }
                                                       │
-                             gapo-work/webhook: sendReply(convId, reply)
+                             gapo-agent/webhook: sendReply(convId, reply)
                                                       │
                                      ──▶ Gapo API ──▶ PM trên Gapo
 ```
@@ -160,11 +160,11 @@ runAgent("Tổng hợp báo cáo sáng...", ctx={source:"cron", correlationId})
     ├─ LLM compose markdown digest
     ▼
 sendToGapo(CRON_DAILY_DIGEST_TARGET, markdown)
-    │ POST http://localhost:18789/api/plugins/gapo-work/send
+    │ POST http://localhost:18789/api/plugins/gapo-agent/send
     │ Header X-Plugin-Token: <GAPO_SEND_TOKEN>
     │ Body   {conversationId, text}
     ▼
-gapo-work/send.ts → client.sendReply → Gapo API → PM room
+gapo-agent/send.ts → client.sendReply → Gapo API → PM room
 ```
 
 ### 4.3 Follow-up có cooldown 24h
@@ -186,7 +186,7 @@ tools.ts send_follow_up handler:
     │     → bb_pm_api tra gapo_user_maps
     │     ← {gapoThreadId: "583..."}   (hoặc 404 → skipped:"no_gapo_thread")
     ├─ sendToGapo(threadId, question)
-    │     → openclaw/gapo-work/send → Gapo API
+    │     → openclaw/gapo-agent/send → Gapo API
     ├─ cooldown.mark(key, 86400)
     └─ return {sent:true, threadId, cooldownSec:86400}
 ```
@@ -264,6 +264,19 @@ Human-in-the-loop: LLM chỉ tạo DRAFT, user xem + nói "approve items X, Y" r
 
 Planning suggestion (Flow 8) không thêm tool riêng. System prompt hướng dẫn LLM khi user hỏi "đề xuất tiếp theo" thì combo `get_project_snapshot` + `list_overdue_tasks` + `list_blocked_tasks` rồi compose 3-5 gợi ý.
 
+Thứ tự xử lý turn chat trong `bb-pm-tools`:
+1. check-in state nếu user đang ở phiên `/checkin`;
+2. domain action state machine deterministic (ví dụ tạo project nhiều lượt);
+3. fast-path read shortcut / slash command;
+4. read router → `report.query` / text-to-SQL;
+5. ReAct LLM fallback cho phần còn lại.
+
+Flow tạo project là action state machine riêng, không phụ thuộc LLM giữ ngữ cảnh:
+- chỉ `name` là bắt buộc; `ownerId` mặc định caller;
+- `description` optional, `endDate` optional, `priority` mặc định `MEDIUM`;
+- trước khi tạo sẽ cảnh báo tên gần trùng và luôn preview + chờ xác nhận;
+- sau khi tạo chỉ ghi project, không tự sinh task.
+
 Orchestrator tự động:
 - Gọi `GET /agent/memory/search?conversationId=...` ở đầu mỗi run → inject block "BỐI CẢNH TRƯỚC ĐÓ" vào system prompt.
 - Sau khi tạo reply, spawn 1 LLM call tóm tắt 2 câu → `POST /agent/memory` (fire-and-forget, không block reply).
@@ -314,14 +327,14 @@ curl -X POST http://localhost:18789/api/plugins/bb-pm/agent/run \
 ### Expose Gapo webhook ra internet
 
 Gapo bot cần public URL. Các lựa chọn:
-1. **Reverse proxy** (khuyến nghị prod): Cloudflare Tunnel / Nginx public → `http://<host>:18789/api/plugins/gapo-work/webhook`.
+1. **Reverse proxy** (khuyến nghị prod): Cloudflare Tunnel / Nginx public → `http://<host>:18789/api/plugins/gapo-agent/webhook`.
 2. **ngrok / cloudflared** (dev): `cloudflared tunnel --url http://localhost:18789` rồi trỏ Gapo webhook vào URL trả về.
 3. Direct public IP: cần firewall mở port 18789 + TLS termination tự xử lý.
 
 ### Cập nhật code
 
 ```bash
-# Plugin changes (bb-pm-tools / gapo-work)
+# Plugin changes (bb-pm-tools / gapo-agent)
 docker compose build openclaw && docker compose up -d openclaw
 
 # bb-pm API changes
@@ -351,7 +364,7 @@ docker compose logs --tail 50 bb_pm_db
 | `/api/v1/tasks/overdue` trả 401 | `AGENT_API_TOKEN` trong `.env` (host) ≠ `BB_PM_AGENT_TOKEN` bake vào openclaw. Rebuild cả 2 service sau khi sync. |
 | `send_follow_up` luôn `skipped: no_gapo_thread` | `gapo_user_maps` chưa seed. Insert mapping user_id ↔ gapo_thread_id hoặc hỏi user đúng Gapo ID. |
 | Cron digest không chạy | Check `CRON_DAILY_DIGEST_TARGET` trong `.env` — không được rỗng. Xem `docker compose logs openclaw | grep cron`. |
-| Gapo webhook 502 | Public URL chưa chỉ về container. `curl localhost:18789/api/plugins/gapo-work/webhook -X POST -d '{}'` từ host để test. |
+| Gapo webhook 502 | Public URL chưa chỉ về container. `curl localhost:18789/api/plugins/gapo-agent/webhook -X POST -d '{}'` từ host để test. |
 | LLM unreachable | `openclaw` container không tới được `host.docker.internal`. Trên Linux phải có `extra_hosts` (đã cấu hình). Nếu LLM ở tailnet, host phải có Tailscale up. |
 | `docker compose build` lỗi `corepack` | Node version trong Dockerfile. Check base image `node:22-bookworm-slim`. |
 | Cooldown không reset sau reply của user | Sprint 3 chỉ ghi cooldown; parsing reply để clear cooldown là Sprint 3.5+ (chưa có). |
@@ -380,7 +393,74 @@ docker compose logs --tail 50 bb_pm_db
 - `bb-pm/apps/api/Dockerfile` — Fastify image
 - `bb-pm/apps/web/Dockerfile` — React + nginx
 - `bb-pm-tools/` — orchestrator plugin source
-- `openclaw/openclaw/plugins/gapo-work/` — channel plugin source
+- `gapo-agent/` — channel plugin source
 - `bb-pm/apps/api/prisma/schema.prisma` — DB schema
 - `PMOperationsAgent.md` — product spec
 - `PROCESS.md` — tracker tiến độ
+
+---
+
+## 10. Luồng check-in qua GapoWork
+
+`/checkin` là fast-path của `bb-pm-tools`, không đi qua LLM ở bước mở phiên. Khi user gửi lệnh hoặc nhận reminder, orchestrator lấy project user đang tham gia hoặc đang có task open và chỉ hiển thị 3 lựa chọn đầu để giảm tải UI:
+
+```text
+Hôm nay bạn làm project nào?
+
+Gần đây:
+1. AI PM Agent
+2. Logistics Dashboard
+3. CRM Internal
+
+Hoặc nhập tên project khác.
+```
+
+Người dùng vẫn có thể bấm quick reply, trả lời bằng số hoặc nhập tên project khác. State machine lưu ở `checkin_sessions`:
+
+```text
+AWAITING_PROJECT -> AWAITING_UPDATE -> COMPLETED
+```
+
+```text
+GapoWork
+  -> gapo-agent /webhook
+  -> bb-pm-tools /agent/run
+     -> checkin.ts
+        -> POST /agent/checkin-sessions/start
+        -> PATCH /agent/checkin-sessions/:id
+        -> POST /agent/checkins/import
+        -> POST /agent/checkin-sessions/:id/complete
+  -> gapo-agent /send
+```
+
+Agent mặc định lưu worklog trực tiếp ở cấp project sau khi user gửi update. Nếu parser nhận diện được task rất rõ, hệ thống có thể gắn task ngầm như enrichment; nếu không, flow vẫn hoàn tất ngay. Parse update dùng LLM trước, regex fallback sau để flow vẫn sống khi LLM lỗi hoặc timeout.
+
+### 10.1 API liên quan
+
+| Endpoint | Vai trò |
+| --- | --- |
+| `POST /agent/checkin-sessions/start` | Mở hoặc reset phiên check-in |
+| `GET /agent/checkin-sessions/current` | Lấy phiên hiện tại theo user |
+| `PATCH /agent/checkin-sessions/:id` | Cập nhật project/task/state |
+| `POST /agent/checkin-sessions/:id/complete` | Đóng phiên |
+| `POST /agent/checkins/import` | Tạo backlog nguồn `GAPO_CHECKIN` |
+| `GET /agent/checkins/status` | Danh sách check-in trong ngày |
+| `GET /agent/checkins/missing` | User còn thiếu check-in |
+| `GET /agent/checkins/project-daily-summary` | Tổng hợp check-in theo project trong ngày |
+
+### 10.2 Reminder workflows
+
+`bb-pm-tools` có 3 workflow check-in:
+
+- `noon_checkin_reminder`
+- `eod_checkin_reminder`
+- `missing_checkin_followup`
+
+Chúng chạy theo `CRON_NOON_CHECKIN`, `CRON_EOD_CHECKIN`, `CRON_MISSING_CHECKIN_FOLLOWUP` khi `CRON_CHECKIN_ENABLED=true`. Workflow chỉ gửi cho user còn thiếu check-in, có Gapo identity, không có session active và có project open để chọn.
+
+### 10.3 Failure mode đáng chú ý
+
+- Không có Gapo identity hoặc user không tham gia project nào: không mở được check-in/reminder.
+- Task không còn là bước hỏi mặc định trong `/checkin`; chỉ là dữ liệu gắn thêm khi nhận diện đủ rõ hoặc khi user/PM chỉnh sau.
+- LLM parse lỗi: telemetry tăng `parseFallback`, flow vẫn tiếp tục bằng regex fallback.
+- Cron bị tắt: workflow không tự chạy dù manual `/checkin` vẫn dùng được.

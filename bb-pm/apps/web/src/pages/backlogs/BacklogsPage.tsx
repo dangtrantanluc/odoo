@@ -45,7 +45,7 @@ export function BacklogsPage() {
   return (
     <div className="space-y-4 p-6">
       <div>
-        <h1 className="text-2xl font-bold">Backlogs</h1>
+        <h1 className="text-2xl font-bold">Nhật ký công việc</h1>
         <p className="text-sm text-slate-500">Log và duyệt giờ làm việc</p>
       </div>
 
@@ -66,7 +66,7 @@ export function BacklogsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Kpi label="Số backlog" value={listQ.data?.meta.total ?? 0} />
+        <Kpi label="Số worklog" value={listQ.data?.meta.total ?? 0} />
         <Kpi label="Tổng giờ" value={formatHours(totalHours)} />
         <Kpi label="Tổng chi phí" value={formatMoney(totalCost, "₫")} />
       </div>
@@ -92,13 +92,11 @@ export function BacklogsPage() {
                 <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 align-top">
                   <td className="p-3 whitespace-nowrap">{formatDate(b.workDate)}</td>
                   <td className="p-3">
-                    {b.project ? (
-                      <Link to={`/projects/${b.project.id}?tab=backlogs`} className="text-brand-700 hover:underline">
-                        {b.project.name}
-                      </Link>
-                    ) : "—"}
+                    <Link to={`/projects/${b.project.id}?tab=backlogs`} className="text-brand-700 hover:underline">
+                      {b.project.name}
+                    </Link>
                   </td>
-                  <td className="p-3">{b.task.name}</td>
+                  <td className="p-3">{b.task?.name ?? "—"}</td>
                   <td className="p-3 font-medium">{formatHours(Number(b.hours))}</td>
                   <td className="p-3 text-slate-500">{b.user.fullName}</td>
                   <td className="p-3 text-xs">{formatMoney(b.totalCostSnapshot, b.currency?.symbol ?? "₫")}</td>

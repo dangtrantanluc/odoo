@@ -12,7 +12,19 @@
 #   ./bot-cli.sh send <conversationId> <text>   # send DM directly
 
 set -e
-TOKEN="${BROWSER_TOOLS_TOKEN:-a49def186d8d01fe517d4296b6301c9b6904261c2ff4b4d1839e6622508da47f}"
+# Load local secrets when running from the repo root.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
+TOKEN="${BROWSER_TOOLS_TOKEN:-${GAPO_SEND_TOKEN:-}}"
+if [ -z "$TOKEN" ]; then
+  echo "Missing BROWSER_TOOLS_TOKEN or GAPO_SEND_TOKEN"
+  exit 1
+fi
 HOST="${HOST:-http://localhost:18789}"
 HDR=(-H "X-Plugin-Token: $TOKEN" -H "Content-Type: application/json")
 

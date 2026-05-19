@@ -70,7 +70,7 @@ export function BacklogsTab({ projectId }: { projectId: number }) {
               <option key={s} value={s}>{statusLabels[s]}</option>
             ))}
           </select>
-          <span className="text-sm text-slate-500">{listQ.data?.meta.total ?? 0} backlog</span>
+          <span className="text-sm text-slate-500">{listQ.data?.meta.total ?? 0} worklog</span>
         </div>
         <button className="btn-primary" onClick={() => setCreating(true)}>
           <Plus className="mr-1 h-4 w-4" /> Log giờ
@@ -102,7 +102,7 @@ export function BacklogsTab({ projectId }: { projectId: number }) {
               return (
                 <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 align-top">
                   <td className="p-3 whitespace-nowrap">{formatDate(b.workDate)}</td>
-                  <td className="p-3">{b.task.name}</td>
+                  <td className="p-3">{b.task?.name ?? "—"}</td>
                   <td className="p-3 font-medium">{formatHours(Number(b.hours))}</td>
                   <td className="p-3 text-slate-500">{b.user.fullName}</td>
                   <td className="p-3 text-xs">
@@ -171,7 +171,7 @@ export function BacklogsTab({ projectId }: { projectId: number }) {
             })}
             {listQ.data?.data.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-sm text-slate-500">Chưa có backlog nào.</td>
+                <td colSpan={8} className="p-6 text-center text-sm text-slate-500">Chưa có worklog nào.</td>
               </tr>
             )}
           </tbody>

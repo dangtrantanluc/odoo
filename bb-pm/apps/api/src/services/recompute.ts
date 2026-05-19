@@ -17,10 +17,10 @@ export async function recomputeTaskTotals(tx: Tx, taskId: number) {
 }
 
 export async function recomputeProjectTotals(tx: Tx, projectId: number) {
-  const [taskAgg, counts, budget] = await Promise.all([
-    tx.task.aggregate({
-      where: { projectId },
-      _sum: { totalHours: true, totalCost: true },
+  const [worklogAgg, counts, budget] = await Promise.all([
+    tx.backlog.aggregate({
+      where: { projectId, status: "APPROVED" },
+      _sum: { hours: true, totalCostSnapshot: true },
     }),
     (async () => ({
       tasks:      await tx.task.count({ where: { projectId } }),
@@ -31,11 +31,11 @@ export async function recomputeProjectTotals(tx: Tx, projectId: number) {
     }))(),
     tx.project.findUnique({ where: { id: projectId }, select: { budget: true } }),
   ]);
-  const totalCost = taskAgg._sum.totalCost ?? 0;
+  const totalCost = worklogAgg._sum.totalCostSnapshot ?? 0;
   await tx.project.update({
     where: { id: projectId },
     data: {
-      totalHours: Number(taskAgg._sum.totalHours ?? 0),
+      totalHours: Number(worklogAgg._sum.hours ?? 0),
       totalCost,
       taskCount: counts.tasks,
       memberCount: counts.members,

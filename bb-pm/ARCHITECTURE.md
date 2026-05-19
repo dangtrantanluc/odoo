@@ -416,7 +416,7 @@ Bench (`pnpm bench`): scenarios cover greeting, knowledge-no-tool, with-15-tools
                   ↓                                                                  │
        Return reply { reply, requestId, fastPath? }
                   ↓
-       Channel adapter sends to Gapo (gapo-work plugin /send)
+       Channel adapter sends to Gapo (gapo-agent plugin /send)
                   ↓
        Watcher detect [END_SESSION] marker → SKIP send + 5min cooldown
        OR send normally with watcher cooldownMs (~30s)
@@ -499,3 +499,31 @@ Detail report: [test.md](../test.md).
 | User send wrong [END_SESSION] | Formatter cross-check userMessage | Strip marker, treat as normal reply |
 | Caller (gapo cid) không resolve | Friendly NO_CALLER_REPLY ngay | User được hướng dẫn liên hệ admin (vs silent timeout) |
 | Watcher Playwright session die | (TODO Sprint 9) | Manual restart hiện tại; auto re-login planned |
+
+## 12. Check-in API cho PM Agent
+
+Backend sở hữu persistence và state machine của daily check-in; plugin chỉ điều phối hội thoại. Nhóm endpoint hiện tại:
+
+| Endpoint | Mục đích |
+| --- | --- |
+| `POST /api/v1/agent/checkin-sessions/start` | Tạo/reset phiên, đưa về `AWAITING_PROJECT` |
+| `GET /api/v1/agent/checkin-sessions/current` | Đọc phiên hiện tại theo user |
+| `PATCH /api/v1/agent/checkin-sessions/:id` | Cập nhật project/task/state/pending payload |
+| `POST /api/v1/agent/checkin-sessions/:id/complete` | Đánh dấu `COMPLETED` |
+| `POST /api/v1/agent/checkins/import` | Tạo backlog `GAPO_CHECKIN` cho task đã xác nhận |
+| `GET /api/v1/agent/checkins/status` | Lấy check-in trong ngày |
+| `GET /api/v1/agent/checkins/missing` | Tìm user còn thiếu check-in |
+| `GET /api/v1/agent/checkins/project-daily-summary` | Tổng hợp check-in theo project |
+
+State hợp lệ:
+
+```text
+IDLE | AWAITING_PROJECT | AWAITING_UPDATE | AWAITING_TASK_CONFIRM | COMPLETED
+```
+
+Quy tắc đáng nhớ:
+
+- Session là một-per-user, `start` dùng upsert để reset phiên cũ.
+- `import` chỉ chấp nhận task đang assign đúng user.
+- `missing` bỏ qua user đã có backlog `GAPO_CHECKIN` trong ngày và đánh dấu `activeSession` để workflow không nhắc trùng.
+- API luôn enforce company scope với non-super-admin.

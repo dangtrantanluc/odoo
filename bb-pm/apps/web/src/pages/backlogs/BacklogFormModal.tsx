@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backlogCreateSchema, type BacklogCreateInput } from "@bb-pm/shared";
-import { createBacklog, updateBacklog, type Backlog } from "@/features/backlogs/api";
+import { createProjectBacklog, updateBacklog, type Backlog } from "@/features/backlogs/api";
 import { listTasks } from "@/features/tasks/api";
 import { Modal } from "@/components/ui/Modal";
 import { useState, useEffect } from "react";
@@ -21,7 +21,7 @@ export function BacklogFormModal({
   backlog?: Backlog | null;
 }) {
   const qc = useQueryClient();
-  const [taskId, setTaskId] = useState<number | undefined>(preselectedTaskId ?? backlog?.task.id);
+  const [taskId, setTaskId] = useState<number | undefined>(preselectedTaskId ?? backlog?.task?.id);
 
   const tasksQ = useQuery({
     queryKey: ["tasks-lite", projectId],
@@ -45,7 +45,7 @@ export function BacklogFormModal({
         hours: Number(backlog.hours),
         description: backlog.description ?? "",
       });
-      setTaskId(backlog.task.id);
+      setTaskId(backlog.task?.id);
     } else if (open) {
       form.reset({ workDate: new Date().toISOString().slice(0, 10), hours: 1, description: "" });
       setTaskId(preselectedTaskId);
@@ -55,8 +55,7 @@ export function BacklogFormModal({
   const save = useMutation({
     mutationFn: async (v: BacklogCreateInput) => {
       if (backlog) return updateBacklog(backlog.id, v);
-      if (!taskId) throw new Error("Chưa chọn task");
-      return createBacklog(taskId, v);
+      return createProjectBacklog(projectId, { ...v, taskId });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["backlogs"] });
@@ -71,13 +70,13 @@ export function BacklogFormModal({
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} className="space-y-3">
         {!backlog && (
           <div>
-            <label className="label">Task *</label>
+            <label className="label">Task (tùy chọn)</label>
             <select
               className="input"
               value={taskId ?? ""}
               onChange={(e) => setTaskId(e.target.value ? Number(e.target.value) : undefined)}
             >
-              <option value="">— Chọn task —</option>
+              <option value="">— Không gắn task —</option>
               {tasksQ.data?.data.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
@@ -112,7 +111,7 @@ export function BacklogFormModal({
 
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-ghost border border-slate-200" onClick={onClose}>Hủy</button>
-          <button type="submit" className="btn-primary" disabled={save.isPending || (!taskId && !backlog)}>
+          <button type="submit" className="btn-primary" disabled={save.isPending}>
             {save.isPending ? "Đang lưu…" : "Lưu"}
           </button>
         </div>

@@ -11,8 +11,8 @@ export type Backlog = {
   totalCostSnapshot: string | null;
   rejectedReason: string | null;
   approvedAt: string | null;
-  task: { id: number; name: string };
-  project: { id: number; name: string; code: string | null } | null;
+  task: { id: number; name: string } | null;
+  project: { id: number; name: string; code: string | null };
   user: { id: number; fullName: string; avatarUrl: string | null };
   approver: { id: number; fullName: string } | null;
   currency: { id: number; code: string; symbol: string } | null;
@@ -40,6 +40,11 @@ export async function listBacklogs(params: BacklogListParams = {}) {
 
 export async function createBacklog(taskId: number, input: BacklogCreateInput) {
   const { data } = await apiClient.post<{ data: Backlog }>(`/backlogs/by-task/${taskId}`, input);
+  return data.data;
+}
+
+export async function createProjectBacklog(projectId: number, input: BacklogCreateInput & { taskId?: number }) {
+  const { data } = await apiClient.post<{ data: Backlog }>(`/backlogs/by-project/${projectId}`, input);
   return data.data;
 }
 

@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import bcrypt from "bcrypt";
+import { Prisma } from "@prisma/client";
 import { mapGapoToRole, synthEmail, shouldUpgradeRole } from "./bulk-import";
 
 // Audit log — receives per-tool invocation records from bb-pm-tools
@@ -226,6 +227,415 @@ const agentRoutes: FastifyPluginAsync = async (app) => {
       where: { createdAt: { lt: cutoff } },
     });
     return { data: { deletedCount: result.count, cutoff: cutoff.toISOString(), dryRun: false } };
+  });
+
+  // POST /agent/checkins/import — create a backlog on behalf of the mapped
+  // human user while still authenticating the caller as the service agent.
+  const checkinImportBody = z.object({
+    userId: z.number().int().positive(),
+    projectId: z.number().int().positive(),
+    taskId: z.number().int().positive().optional(),
+    workDate: z.string().date(),
+    hours: z.number().positive().max(24),
+    description: z.string().min(1).max(5000),
+  });
+  app.post("/checkins/import", { schema: { body: checkinImportBody } }, async (req, reply) => {
+    if (req.user.isAgent !== true) {
+      return reply.code(403).send({ error: { code: "FORBIDDEN", message: "Agent token required" } });
+    }
+    const body = req.body as z.infer<typeof checkinImportBody>;
+    const [user, project, task] = await Promise.all([
+      app.prisma.user.findFirst({
+        where: { id: body.userId, companyId: req.user.companyId, active: true },
+        select: { id: true },
+      }),
+      app.prisma.project.findFirst({
+        where: { id: body.projectId, companyId: req.user.companyId },
+      }),
+      body.taskId
+        ? app.prisma.task.findFirst({
+            where: { id: body.taskId, projectId: body.projectId, project: { companyId: req.user.companyId } },
+            include: { project: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    if (!user) return reply.code(404).send({ error: { code: "USER_NOT_FOUND" } });
+    if (!project) return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
+    if (body.taskId && !task) return reply.code(404).send({ error: { code: "TASK_NOT_FOUND" } });
+    if (task && task.assigneeId !== body.userId) {
+      return reply.code(409).send({ error: { code: "TASK_NOT_ASSIGNED_TO_USER" } });
+    }
+
+    const workDate = new Date(body.workDate);
+    const rate = await app.prisma.memberRate.findFirst({
+      where: {
+        member: { projectId: project.id, userId: body.userId },
+        effectiveFrom: { lte: workDate },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: workDate } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    const costPerHour = rate?.costPerHour ?? null;
+    const totalCost = costPerHour ? Number(costPerHour) * body.hours : null;
+    const backlog = await app.prisma.backlog.create({
+      data: {
+        workDate,
+        hours: body.hours,
+        description: body.description,
+        status: "PENDING",
+        source: "GAPO_CHECKIN",
+        taskId: task?.id ?? null,
+        projectId: project.id,
+        companyId: project.companyId,
+        userId: body.userId,
+        currencyId: rate?.currencyId ?? task?.currencyId ?? project.currencyId,
+        costPerHourSnapshot: costPerHour,
+        totalCostSnapshot: totalCost as any,
+      },
+    });
+    await app.prisma.project.update({
+      where: { id: project.id },
+      data: { backlogCount: { increment: 1 } },
+    });
+    return reply.code(201).send({ data: backlog });
+  });
+
+
+  // PATCH /agent/checkins/:backlogId — update a pending Gapo worklog on behalf of its owner.
+  const checkinUpdateBody = z.object({
+    userId: z.number().int().positive(),
+    workDate: z.string().date().optional(),
+    hours: z.number().positive().max(24).optional(),
+    description: z.string().min(1).max(5000).optional(),
+  });
+  app.patch("/checkins/:backlogId", {
+    schema: {
+      params: z.object({ backlogId: z.coerce.number().int().positive() }),
+      body: checkinUpdateBody,
+    },
+  }, async (req, reply) => {
+    if (req.user.isAgent !== true) {
+      return reply.code(403).send({ error: { code: "FORBIDDEN", message: "Agent token required" } });
+    }
+    const { backlogId } = req.params as any;
+    const body = req.body as z.infer<typeof checkinUpdateBody>;
+    const existing = await app.prisma.backlog.findFirst({
+      where: {
+        id: backlogId,
+        userId: body.userId,
+        source: "GAPO_CHECKIN",
+        status: "PENDING",
+        project: { companyId: req.user.companyId },
+      },
+    });
+    if (!existing) return reply.code(404).send({ error: { code: "WORKLOG_NOT_FOUND" } });
+
+    const workDate = body.workDate ? new Date(body.workDate) : existing.workDate;
+    const hours = body.hours ?? Number(existing.hours);
+    const rate = await app.prisma.memberRate.findFirst({
+      where: {
+        member: { projectId: existing.projectId!, userId: existing.userId },
+        effectiveFrom: { lte: workDate },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: workDate } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    const costPerHour = rate?.costPerHour ?? null;
+    const totalCost = costPerHour ? Number(costPerHour) * Number(hours) : null;
+    const updated = await app.prisma.backlog.update({
+      where: { id: backlogId },
+      data: {
+        workDate,
+        hours,
+        description: body.description ?? existing.description,
+        costPerHourSnapshot: costPerHour,
+        totalCostSnapshot: totalCost as any,
+      },
+    });
+    return { data: updated };
+  });
+
+  app.get("/checkins/projects", async (req) => {
+    const q = req.query as { userId?: string };
+    const userId = Number(q.userId);
+    if (!Number.isInteger(userId) || userId <= 0) return { data: [] };
+    const projects = await app.prisma.project.findMany({
+      where: {
+        companyId: req.user.companyId,
+        OR: [
+          { members: { some: { userId } } },
+          { tasks: { some: { assigneeId: userId, status: { not: "DONE" } } } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, name: true, code: true },
+      take: 100,
+    });
+    return { data: projects };
+  });
+
+  const checkinSessionState = z.enum([
+    "IDLE",
+    "AWAITING_PROJECT",
+    "AWAITING_UPDATE",
+    "AWAITING_TASK_CONFIRM",
+    "COMPLETED",
+  ]);
+  const checkinSessionStartBody = z.object({
+    userId: z.number().int().positive(),
+    gapoUserId: z.string().min(1).max(256),
+    threadId: z.string().min(1).max(256),
+    lastMessageId: z.string().max(256).optional(),
+    expiresAt: z.string().datetime(),
+  });
+  app.post("/checkin-sessions/start", { schema: { body: checkinSessionStartBody } }, async (req, reply) => {
+    const b = req.body as z.infer<typeof checkinSessionStartBody>;
+    const user = await app.prisma.user.findFirst({
+      where: req.user.isSuperAdmin
+        ? { id: b.userId, active: true }
+        : { id: b.userId, companyId: req.user.companyId, active: true },
+      select: { id: true },
+    });
+    if (!user) return reply.code(404).send({ error: { code: "USER_NOT_FOUND" } });
+    const row = await app.prisma.checkinSession.upsert({
+      where: { userId: b.userId },
+      create: {
+        userId: b.userId,
+        gapoUserId: b.gapoUserId,
+        threadId: b.threadId,
+        state: "AWAITING_PROJECT",
+        expiresAt: new Date(b.expiresAt),
+        lastMessageId: b.lastMessageId ?? null,
+      },
+      update: {
+        gapoUserId: b.gapoUserId,
+        threadId: b.threadId,
+        currentProjectId: null,
+        currentTaskId: null,
+        pendingText: null,
+        pendingParsed: undefined,
+        state: "AWAITING_PROJECT",
+        expiresAt: new Date(b.expiresAt),
+        lastMessageId: b.lastMessageId ?? null,
+        completedAt: null,
+      },
+    });
+    return reply.code(201).send({ data: row });
+  });
+
+  const checkinCurrentQuery = z.object({
+    userId: z.coerce.number().int().positive(),
+  });
+  app.get("/checkin-sessions/current", { schema: { querystring: checkinCurrentQuery } }, async (req, reply) => {
+    const q = req.query as z.infer<typeof checkinCurrentQuery>;
+    const row = await app.prisma.checkinSession.findUnique({ where: { userId: q.userId } });
+    if (!row) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+    return { data: row };
+  });
+
+  const checkinPatchBody = z.object({
+    currentProjectId: z.number().int().positive().nullable().optional(),
+    currentTaskId: z.number().int().positive().nullable().optional(),
+    state: checkinSessionState.optional(),
+    expiresAt: z.string().datetime().optional(),
+    lastMessageId: z.string().max(256).nullable().optional(),
+    pendingText: z.string().max(5000).nullable().optional(),
+    pendingParsed: z.any().nullable().optional(),
+  });
+  app.patch("/checkin-sessions/:id", {
+    schema: {
+      params: z.object({ id: z.coerce.number().int().positive() }),
+      body: checkinPatchBody,
+    },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: number };
+    const b = req.body as z.infer<typeof checkinPatchBody>;
+    const existing = await app.prisma.checkinSession.findUnique({
+      where: { id },
+      include: { user: { select: { companyId: true } } },
+    });
+    if (!existing) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+    if (!req.user.isSuperAdmin && existing.user.companyId !== req.user.companyId) {
+      return reply.code(403).send({ error: { code: "FORBIDDEN" } });
+    }
+    const row = await app.prisma.checkinSession.update({
+      where: { id },
+      data: {
+        currentProjectId: b.currentProjectId,
+        currentTaskId: b.currentTaskId,
+        state: b.state,
+        expiresAt: b.expiresAt ? new Date(b.expiresAt) : undefined,
+        lastMessageId: b.lastMessageId,
+        pendingText: b.pendingText,
+        pendingParsed: b.pendingParsed === null ? Prisma.DbNull : b.pendingParsed,
+      },
+    });
+    return { data: row };
+  });
+
+  app.post("/checkin-sessions/:id/complete", {
+    schema: { params: z.object({ id: z.coerce.number().int().positive() }) },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: number };
+    const existing = await app.prisma.checkinSession.findUnique({
+      where: { id },
+      include: { user: { select: { companyId: true } } },
+    });
+    if (!existing) return reply.code(404).send({ error: { code: "NOT_FOUND" } });
+    if (!req.user.isSuperAdmin && existing.user.companyId !== req.user.companyId) {
+      return reply.code(403).send({ error: { code: "FORBIDDEN" } });
+    }
+    const row = await app.prisma.checkinSession.update({
+      where: { id },
+      data: {
+        state: "COMPLETED",
+        completedAt: new Date(),
+        pendingText: null,
+        pendingParsed: Prisma.DbNull,
+      },
+    });
+    return { data: row };
+  });
+
+  const checkinDateQuery = z.object({
+    date: z.string().date().optional(),
+    projectId: z.coerce.number().int().positive().optional(),
+    userId: z.coerce.number().int().positive().optional(),
+  });
+  app.get("/checkins/status", { schema: { querystring: checkinDateQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof checkinDateQuery>;
+    const date = q.date ?? new Date().toISOString().slice(0, 10);
+    const start = new Date(`${date}T00:00:00.000Z`);
+    const end = new Date(`${date}T23:59:59.999Z`);
+    const rows = await app.prisma.backlog.findMany({
+      where: {
+        source: "GAPO_CHECKIN",
+        workDate: { gte: start, lte: end },
+        ...(q.userId ? { userId: q.userId } : {}),
+        project: req.user.isSuperAdmin
+          ? (q.projectId ? { id: q.projectId } : undefined)
+          : { companyId: req.user.companyId, ...(q.projectId ? { id: q.projectId } : {}) },
+      },
+      include: {
+        user: { select: { id: true, fullName: true } },
+        project: { select: { id: true, name: true, code: true } },
+        task: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return { data: rows, meta: { total: rows.length, date } };
+  });
+
+  app.get("/checkins/missing", { schema: { querystring: checkinDateQuery } }, async (req) => {
+    const q = req.query as z.infer<typeof checkinDateQuery>;
+    const date = q.date ?? new Date().toISOString().slice(0, 10);
+    const start = new Date(`${date}T00:00:00.000Z`);
+    const end = new Date(`${date}T23:59:59.999Z`);
+    const companyScope = req.user.isSuperAdmin ? {} : { companyId: req.user.companyId };
+    const members = await app.prisma.member.findMany({
+      where: {
+        project: {
+          ...companyScope,
+          ...(q.projectId ? { id: q.projectId } : {}),
+        },
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            channelIdentities: {
+              where: { channel: "gapo" },
+              orderBy: [{ preferred: "desc" }, { lastSeenAt: "desc" }],
+              take: 1,
+            },
+            checkinSession: true,
+          },
+        },
+      },
+    });
+    const userIds = Array.from(new Set(members.map((m) => m.userId)));
+    const checked = await app.prisma.backlog.findMany({
+      where: {
+        source: "GAPO_CHECKIN",
+        userId: { in: userIds },
+        workDate: { gte: start, lte: end },
+      },
+      select: { userId: true },
+    });
+    const checkedIds = new Set(checked.map((r) => r.userId));
+    const users = new Map<number, any>();
+    for (const member of members) {
+      if (!member.user || checkedIds.has(member.user.id)) continue;
+      users.set(member.user.id, member.user);
+    }
+    return {
+      data: Array.from(users.values()).map((u) => ({
+        id: u.id,
+        fullName: u.fullName,
+        gapoThreadId: u.channelIdentities[0]?.threadId ?? null,
+        gapoUserId: u.channelIdentities[0]?.externalId ?? null,
+        activeSession:
+          u.checkinSession &&
+          u.checkinSession.state !== "COMPLETED" &&
+          u.checkinSession.expiresAt > new Date(),
+      })),
+      meta: { total: users.size, date },
+    };
+  });
+
+  const checkinSummaryQuery = z.object({
+    projectId: z.coerce.number().int().positive(),
+    date: z.string().date().optional(),
+  });
+  app.get("/checkins/project-daily-summary", {
+    schema: { querystring: checkinSummaryQuery },
+  }, async (req) => {
+    const q = req.query as z.infer<typeof checkinSummaryQuery>;
+    const date = q.date ?? new Date().toISOString().slice(0, 10);
+    const start = new Date(`${date}T00:00:00.000Z`);
+    const end = new Date(`${date}T23:59:59.999Z`);
+    const [rows, blockerCount] = await Promise.all([
+      app.prisma.backlog.findMany({
+        where: {
+          source: "GAPO_CHECKIN",
+          projectId: q.projectId,
+          workDate: { gte: start, lte: end },
+          project: req.user.isSuperAdmin ? undefined : { companyId: req.user.companyId },
+        },
+        include: {
+          user: { select: { id: true, fullName: true } },
+          task: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      app.prisma.taskBlocker.count({
+        where: {
+          createdAt: { gte: start, lte: end },
+          task: {
+            projectId: q.projectId,
+            project: req.user.isSuperAdmin ? undefined : { companyId: req.user.companyId },
+          },
+        },
+      }),
+    ]);
+    return {
+      data: {
+        projectId: q.projectId,
+        date,
+        totalHours: rows.reduce((sum, r) => sum + Number(r.hours), 0),
+        checkinCount: rows.length,
+        blockerCount,
+        latestUpdates: rows.slice(0, 10).map((r) => ({
+          backlogId: r.id,
+          user: r.user,
+          task: r.task,
+          hours: Number(r.hours),
+          description: r.description,
+        })),
+      },
+    };
   });
 
   // GET /agent/gapo-thread/:userId — back-compat wrapper over the new
@@ -526,17 +936,25 @@ const agentRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  // GET /agent/user-by-channel?channel=gapo&externalId=<cid>
-  // Reverse lookup: given a Gapo conversation id, find the bb-pm user.
+  // GET /agent/user-by-channel?channel=gapo&externalId=<cid>[&threadId=<thread>]
+  // Reverse lookup: given a Gapo user id or conversation thread id, find the bb-pm user.
   // Used by the watcher to attach caller identity to /agent/run payloads.
   const userByChannelQuery = z.object({
     channel: channelKindEnum,
     externalId: z.string().min(1).max(256),
+    threadId: z.string().min(1).max(256).optional(),
   });
   app.get("/user-by-channel", { schema: { querystring: userByChannelQuery } }, async (req, reply) => {
     const q = req.query as z.infer<typeof userByChannelQuery>;
-    const identity = await app.prisma.channelIdentity.findUnique({
-      where: { channel_externalId: { channel: q.channel, externalId: q.externalId } },
+    const identity = await app.prisma.channelIdentity.findFirst({
+      where: {
+        channel: q.channel,
+        OR: [
+          { externalId: q.externalId },
+          ...(q.threadId ? [{ threadId: q.threadId }] : []),
+        ],
+      },
+      orderBy: [{ preferred: "desc" }, { updatedAt: "desc" }],
       include: {
         user: {
           select: {

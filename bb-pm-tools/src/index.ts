@@ -21,7 +21,7 @@ export function register(api: any) {
   }
 
   // Primary entry: channel-agnostic agent runner.
-  // Channel plugins (gapo-work, etc.) POST { text, correlationId?, source? } here.
+  // Channel plugins (gapo-agent, Slack, etc.) POST { text, correlationId?, source? } here.
   api.registerHttpRoute({
     path: AGENT_RUN_PATH,
     auth: "plugin",

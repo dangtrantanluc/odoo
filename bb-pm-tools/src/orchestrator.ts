@@ -2,11 +2,17 @@ import { config } from "./config";
 import { chat, ChatMessage } from "./llm";
 import { toolCatalog, toolsByName } from "./tools";
 import { bbPm } from "./api-client";
-import { recallMemoryContext, summarizeAndStore, recordRecentTurn } from "./memory";
+import {
+  recallMemoryContext,
+  summarizeAndStore,
+  recordRecentTurn,
+  shouldRecallMemoryContext,
+} from "./memory";
 import { buildPromptV2 } from "./prompt-v2";
 import { sendToGapo } from "./channel-out";
 import { tryFastPath, executeFastPath } from "./pre-classifier";
 import type { AgentContext } from "./types";
+import { getCachedGapoUser } from "./caller-cache";
 
 // Sprint 8 Day 1 — quick acknowledge UX.
 // Khi LLM chậm (Qwen 60-180s), gửi tin "đang xử lý..." vào Gapo thread sau N
@@ -23,18 +29,18 @@ const ACK_SECOND_DELAY_MS = Number(process.env.BB_PM_ACK_SECOND_DELAY_MS ?? 45_0
 // gây cảm giác robot. Random 1 trong N câu mỗi lần fire để tự nhiên hơn.
 // Giữ tone thân thiện, không quá dài (≤ 50 chars).
 const ACK_FIRST_POOL = [
-  "🤔 Đang xử lý câu hỏi của bạn...",
-  "💭 Mình đang nghĩ đây, chờ chút nhé...",
-  "⏳ Đang tìm thông tin, chờ mình một xíu...",
-  "🔍 Mình đang check dữ liệu...",
-  "✨ Đang xử lý, lát có ngay...",
+  "Đang xử lý câu hỏi của bạn...",
+  "Mình đang nghĩ đây, chờ chút nhé...",
+  "Đang tìm thông tin, chờ mình một xíu...",
+  "Mình đang check dữ liệu...",
+  "Đang xử lý, lát có ngay...",
 ];
 
 const ACK_SECOND_POOL = [
-  "🕐 Vẫn đang chạy, mất thêm chút nữa...",
-  "⏳ Câu này hơi lâu, kiên nhẫn chút nhé...",
-  "🔄 Mình vẫn đang xử lý, thêm xíu nữa...",
-  "💪 Sắp xong rồi, bạn đợi thêm chút...",
+  "Vẫn đang chạy, mất thêm chút nữa...",
+  "Câu này hơi lâu, kiên nhẫn chút nhé...",
+  "Mình vẫn đang xử lý, thêm xíu nữa...",
+  "Sắp xong rồi, bạn đợi thêm chút...",
 ];
 
 function pickRandom<T>(pool: readonly T[]): T {
@@ -44,7 +50,7 @@ function pickRandom<T>(pool: readonly T[]): T {
 /**
  * Derive Gapo thread target từ ctx.conversationId. Format watcher set là
  * "gapo:<rawThreadId>" — strip prefix → numeric thread_id format mà
- * gapo-work /send hiểu (legacy passthrough). Trả null nếu không phải
+ * gapo-agent /send hiểu (legacy passthrough). Trả null nếu không phải
  * Gapo conversation.
  */
 function gapoTargetFromCtx(ctx: AgentContext): string | null {
@@ -139,6 +145,8 @@ Quan sát (READ):
 - get_project_snapshot        — chi tiết 1 dự án
 - list_users_with_workload    — user kèm số task open (cho phân chia)
 - list_pending_follow_ups     — follow-up đã gửi chưa được reply
+- checkin.missing             — ai chưa check-in hôm nay
+- project.daily_checkin_summary — tổng hợp check-in hôm nay của project
 
 Tra cứu:
 - find_user                   — bb-pm user (id, email, role)
@@ -235,22 +243,17 @@ NGUYÊN TẮC:
     d) Nếu cần preview tin trước khi gửi: dùng options.dryRun=true để return plan.
 
 19. CREATE PROJECT: khi user nói "tạo project mới" / "làm dự án":
-    a) Hỏi 3 thứ nếu chưa có: tên, deadline (endDate), owner (default = caller).
-    b) Confirm với user TRƯỚC khi gọi tool create_project.
-    c) Sau khi project tạo xong, decompose thành 3-7 task theo template phù hợp:
-       - Web/landing: design → content → frontend → backend → QA
-       - Mobile app: UX → API → mobile build → store submit → QA
-       - Marketing: brief → asset → schedule → publish → measure
-       - Internal tool: design → backend → frontend → QA → onboarding
-    d) Mỗi task: assign cho user phù hợp (find_user theo dept), set deadline staggered
-       trước project deadline. Default reasonable hours.
-    e) List ra "Đã tạo X task: ..." và hỏi "Confirm hay sửa assignee?"
+    a) Chỉ bắt buộc tên; owner mặc định = caller.
+    b) description optional; deadline (endDate) optional và được phép bỏ trống; priority mặc định MEDIUM.
+    c) Confirm với user TRƯỚC khi gọi tool project.create.
+    d) Sau khi project tạo xong, KHÔNG tự tạo task. Có thể hỏi user có muốn lập kế hoạch task ở bước riêng không.
 8. recall_memory: GỌI khi câu hỏi có từ gợi ý kế thừa ("lần trước", "vụ đó", "hôm qua bạn nói", "tiếp tục với", "quay lại task X"). KHÔNG gọi cho câu hỏi độc lập đã có dữ liệu tươi.
 9. generate_weekly_report: dùng cho "báo cáo tuần", CEO hỏi xu hướng. Với digest đơn thuần hôm nay → dùng generate_daily_digest.
 10. MEETING FLOW (quan trọng): khi input có dấu hiệu là transcript họp/biên bản/notes họp (xuất hiện ≥ 2 dấu hiệu sau: "biên bản", "PM:", "Dev:", "[tên]:", nhiều lượt đối thoại, từ "họp/meeting/standup", danh sách quyết định/action items) → **BẮT BUỘC** dùng **ingest_meeting** duy nhất, **KHÔNG BAO GIỜ** tự gọi create_action_item / post_blocker / update_task_status để xử lý nội dung transcript. Lý do: meeting items phải qua bước DRAFT + approve để PM kiểm soát. Sau ingest, trình bày tóm tắt + items + hỏi user "OK approve items nào?". Chỉ gọi approve_meeting_items khi user NÓI RÕ "approve / duyệt / OK tạo task cho items X, Y".
 11. approve_meeting_items: chỉ gọi sau khi user xác nhận. Nếu meeting không có projectId và user chưa nói project nào → hỏi lại trước khi approve.
 12. Planning / đề xuất tiếp theo: user hỏi "nên làm gì tiếp", "priority", "next actions" → gọi get_project_snapshot + list_overdue_tasks + list_blocked_tasks, rồi compose 3-5 gợi ý cụ thể (không quá 1 câu / gợi ý). KHÔNG trực tiếp auto-create task.
 13. Chế độ executive (khi user là CEO/leadership — detect qua chức danh trong tin, hoặc tiền tố "CEO:", "Sếp:"): giọng ngắn gọn, KPI-focused, không chi tiết kỹ thuật, luôn có 1 số liệu cụ thể + 1 rủi ro + 1 đề xuất.
+13b. Khi user hỏi "project X tiến độ sao rồi hôm nay" hoặc hỏi dữ liệu mới nhất trong ngày: sau khi xác định project, gọi thêm project.daily_checkin_summary. Nếu cần đánh giá độ mới của dữ liệu, gọi checkin.missing(projectId) và nói rõ còn thiếu check-in của ai thay vì suy đoán.
 14. Ngoài phạm vi (Gmail send, audio transcription...) → thành thật: "Sprint sau sẽ có".
 15. CHAT FORMAT (BẮT BUỘC — Gapo Work là chat, không phải report):
     a) Độ dài: câu hỏi đơn giản (role, status, count, single fact) → ≤ 200 ký tự. Câu hỏi cần list (overdue tasks, digest details) → ≤ 500 ký tự. Tuyệt đối không response > 800 chars trừ khi user hỏi "list đầy đủ" / "chi tiết tất cả".
@@ -357,12 +360,68 @@ USER: "task #42 ai làm?"
 // Hard cap 300s (5 phút) — sau đó throw 'agent_hard_timeout' → caller
 // trả friendly error + log alert. Watcher đã set timeout 320s để align.
 const AGENT_HARD_TIMEOUT_MS = Number(process.env.AGENT_HARD_TIMEOUT_MS ?? 300_000);
+const AGENT_IO_LOG =
+  (process.env.BB_PM_AGENT_IO_LOG ?? "true").toLowerCase() !== "false";
+const AGENT_IO_LOG_MAX_CHARS = Number(process.env.BB_PM_AGENT_IO_LOG_MAX_CHARS ?? 2000);
+
+function truncateForLog(value: string, max = AGENT_IO_LOG_MAX_CHARS): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}…[truncated ${value.length - max} chars]`;
+}
+
+function stringifyForLog(value: unknown): string {
+  try {
+    return truncateForLog(JSON.stringify(value));
+  } catch {
+    return truncateForLog(String(value));
+  }
+}
+
+function summarizeMessagesForLog(messages: ChatMessage[]) {
+  return messages.map((msg) => {
+    if (msg.role === "system") {
+      return { role: msg.role, chars: msg.content.length, content: "[system prompt omitted]" };
+    }
+    if (msg.role === "assistant") {
+      return {
+        role: msg.role,
+        content: truncateForLog(msg.content ?? ""),
+        tool_calls: msg.tool_calls?.map((call) => ({
+          id: call.id,
+          name: call.function.name,
+          arguments: truncateForLog(call.function.arguments),
+        })),
+      };
+    }
+    if (msg.role === "tool") {
+      return {
+        role: msg.role,
+        name: msg.name,
+        tool_call_id: msg.tool_call_id,
+        content: truncateForLog(msg.content),
+      };
+    }
+    return { role: msg.role, content: truncateForLog(msg.content) };
+  });
+}
+
+function agentLog(ctx: AgentContext, event: string, fields: Record<string, unknown> = {}) {
+  if (!AGENT_IO_LOG) return;
+  const base = {
+    ts: new Date().toISOString(),
+    event,
+    requestId: ctx.correlationId,
+    source: ctx.source,
+    conversationId: ctx.conversationId,
+  };
+  console.log(`[bb-pm-tools/agent-io] ${stringifyForLog({ ...base, ...fields })}`);
+}
 
 export async function runAgent(userMessage: string, ctx: AgentContext = {}): Promise<string> {
   // Sprint 8 Day 1 — quick ack timer cho Gapo chat. Skip cho cron/cli/eval
   // (không có recipient để gửi ack). Cancel khi reply done hoặc throw.
   const ackTarget =
-    ctx.source === "chat" ? gapoTargetFromCtx(ctx) : null;
+    ctx.source === "chat" && !ctx.skipChannelAck ? gapoTargetFromCtx(ctx) : null;
   const ackHandle = ackTarget ? scheduleAck(ackTarget, ctx) : null;
 
   // F4 — hard timeout race. Nếu Qwen treo > 5 phút (NL→SQL retry hell, vLLM
@@ -396,9 +455,17 @@ export async function runAgent(userMessage: string, ctx: AgentContext = {}): Pro
 }
 
 async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise<string> {
+  const runStartedAt = Date.now();
+  agentLog(ctx, "agent.start", {
+    input: userMessage,
+    inputChars: userMessage.length,
+  });
+
   // Resolve caller identity FIRST — pre-classifier need ctx.callerUserId for
   // "task của tôi" pattern. resolveCallerBlock mutates ctx.callerUserId.
+  const callerStart = Date.now();
   const callerBlock = await resolveCallerBlock(ctx);
+  if (ctx.timings) ctx.timings.callerResolveMs = Date.now() - callerStart;
 
   // Sprint 8 Day 3 — pre-classifier fast path. Skip ReAct LLM hoàn toàn cho
   // common queries pattern-match được (END_SESSION, "task của tôi", overdue,
@@ -406,7 +473,19 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
   const fp = tryFastPath(userMessage, ctx);
   if (fp) {
     try {
+      const fpStart = Date.now();
+      agentLog(ctx, "fastpath.start", {
+        pattern: fp.pattern,
+        toolName: fp.toolName,
+        toolArgs: fp.toolArgs ?? {},
+      });
       const reply = await executeFastPath(fp, ctx);
+      agentLog(ctx, "fastpath.end", {
+        pattern: fp.pattern,
+        durationMs: Date.now() - fpStart,
+        output: reply,
+        outputChars: reply.length,
+      });
       console.log(`[bb-pm-tools] fastpath:${fp.pattern} matched, skipped LLM`);
       // Audit fastpath usage để monitor coverage + iterate patterns. Skip
       // push cho direct-reply patterns (END_SESSION) — không có tool involved.
@@ -417,6 +496,12 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
           durationMs: 0,
         });
       }
+      agentLog(ctx, "agent.end", {
+        durationMs: Date.now() - runStartedAt,
+        mode: "fastpath",
+        output: reply,
+        outputChars: reply.length,
+      });
       return reply;
     } catch (err: any) {
       console.warn(
@@ -429,9 +514,21 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
 
   // Sprint 4: pull relevant past summaries so the orchestrator has context
   // for follow-on questions ("lần trước bảo sao rồi?").
-  const memoryBlock = await recallMemoryContext(userMessage, ctx);
+  let memoryBlock = "";
+  if (shouldRecallMemoryContext(userMessage, ctx)) {
+    const memoryStart = Date.now();
+    memoryBlock = await recallMemoryContext(userMessage, ctx);
+    if (ctx.timings) ctx.timings.memoryRecallMs = Date.now() - memoryStart;
+  } else if (ctx.timings) {
+    ctx.timings.memoryRecallMs = 0;
+  }
 
-  const schemaDoc = PROMPT_VERSION === "v2" ? await getSchemaDoc() : "";
+  let schemaDoc = "";
+  if (PROMPT_VERSION === "v2") {
+    const schemaStart = Date.now();
+    schemaDoc = await getSchemaDoc();
+    if (ctx.timings) ctx.timings.schemaDocMs = Date.now() - schemaStart;
+  }
   const systemPrompt = PROMPT_VERSION === "v2"
     ? buildPromptV2({ callerBlock, memoryBlock, schemaDoc })
     : [SYSTEM_PROMPT_BASE, callerBlock, memoryBlock].filter((s) => s).join("\n\n");
@@ -450,20 +547,23 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
   // retry NL→SQL fail loop (saves 5-8 phút/turn).
   const catalog = toolCatalog(PROMPT_VERSION === "v2" ? "v2" : "v1");
   for (let step = 0; step < config.orchestrator.maxToolSteps; step++) {
-    const resp = await chat(messages, catalog);
+    const resp = await chatWithAgentLog(ctx, `react_step_${step + 1}`, messages, catalog);
+    recordLlmTrace(ctx, `react_step_${step + 1}`, resp);
 
     if (!resp.tool_calls?.length) {
       // LLM said "I'm done", no more tools to call. If content is empty
       // (Qwen sometimes returns null after a tool chain), force one more
       // call without tools to make it summarize what it just did.
       if (!resp.content || !resp.content.trim()) {
-        const synth = await chat([
+        const synthMessages: ChatMessage[] = [
           ...messages,
           {
             role: "user",
             content: "Tổng hợp ngắn gọn (≤200 chars) kết quả vừa làm cho user.",
           },
-        ]);
+        ];
+        const synth = await chatWithAgentLog(ctx, "react_empty_synth", synthMessages);
+        recordLlmTrace(ctx, "react_empty_synth", synth);
         finalReply = synth.content?.trim() || "Đã xử lý xong.";
       } else {
         finalReply = resp.content;
@@ -494,7 +594,7 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
     // Hit max steps without a final answer. Force one synthesizing call
     // (no tools) so user gets something actionable instead of an apology.
     try {
-      const synth = await chat([
+      const synthMessages: ChatMessage[] = [
         ...messages,
         {
           role: "user",
@@ -502,7 +602,9 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
             "Tổng hợp NGẮN GỌN những gì bạn đã làm + kết quả + câu hỏi tiếp theo nếu có. " +
             "KHÔNG gọi tool nữa, chỉ trả text Vietnamese ≤300 chars.",
         },
-      ]);
+      ];
+      const synth = await chatWithAgentLog(ctx, "react_forced_synth", synthMessages);
+      recordLlmTrace(ctx, "react_forced_synth", synth);
       finalReply = synth.content?.trim() || "Đã thực hiện một số bước nhưng cần thêm thông tin từ bạn.";
     } catch {
       finalReply = "Đã xử lý nhiều bước nhưng cần thêm thông tin từ bạn để hoàn tất.";
@@ -524,7 +626,66 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
   // gõ ngay, DB summary chưa kịp ghi) vẫn có context follow-up. Sync, cheap.
   recordRecentTurn(ctx.conversationId, userMessage, finalReply);
 
+  agentLog(ctx, "agent.end", {
+    durationMs: Date.now() - runStartedAt,
+    mode: "llm",
+    output: finalReply,
+    outputChars: finalReply.length,
+  });
   return finalReply;
+}
+
+async function chatWithAgentLog(
+  ctx: AgentContext,
+  label: string,
+  messages: ChatMessage[],
+  tools?: Parameters<typeof chat>[1],
+): ReturnType<typeof chat> {
+  const startedAt = Date.now();
+  agentLog(ctx, "llm.start", {
+    label,
+    messages: summarizeMessagesForLog(messages),
+    toolCount: tools?.length ?? 0,
+    tools: tools?.map((t) => t.function.name),
+  });
+  try {
+    const resp = await chat(messages, tools);
+    agentLog(ctx, "llm.end", {
+      label,
+      durationMs: Date.now() - startedAt,
+      latencyMs: resp.latencyMs,
+      provider: resp.provider,
+      model: resp.model,
+      finishReason: resp.finish_reason,
+      usage: resp.usage,
+      content: resp.content ?? "",
+      contentChars: resp.content?.length ?? 0,
+      toolCalls: resp.tool_calls.map((call) => ({
+        id: call.id,
+        name: call.function.name,
+        arguments: call.function.arguments,
+      })),
+    });
+    return resp;
+  } catch (err: any) {
+    agentLog(ctx, "llm.error", {
+      label,
+      durationMs: Date.now() - startedAt,
+      error: err?.message ?? String(err),
+    });
+    throw err;
+  }
+}
+
+function recordLlmTrace(ctx: AgentContext, label: string, resp: Awaited<ReturnType<typeof chat>>) {
+  if (!ctx.timings) return;
+  ctx.timings.llmCalls.push({
+    label,
+    latencyMs: resp.latencyMs ?? 0,
+    provider: resp.provider,
+    model: resp.model,
+    finishReason: resp.finish_reason,
+  });
 }
 
 /**
@@ -542,17 +703,18 @@ async function runAgentInternal(userMessage: string, ctx: AgentContext): Promise
  * system prompt. Trả "" nếu không phải Gapo conversation.
  */
 async function resolveCallerBlock(ctx: AgentContext): Promise<string> {
-  if (!ctx.conversationId) return "";
-  const m = ctx.conversationId.match(/^gapo:(\d+)$/);
-  if (!m) return "";
+  if (!ctx.externalId) return "";
   try {
-    const user = await bbPm.getUserByGapoCid(m[1]);
+    const threadId = ctx.conversationId?.startsWith("gapo:")
+      ? ctx.conversationId.slice("gapo:".length)
+      : ctx.conversationId;
+    const user = await getCachedGapoUser(ctx.externalId, threadId);
     if (!user) {
       // No bb-pm row for this Gapo user. Tell the LLM so it doesn't
       // hallucinate a userId or pretend to know who's asking.
       return [
         "CALLER (người đang chat):",
-        `- Gapo cid: ${m[1]}`,
+        `- Gapo user id: ${ctx.externalId}`,
         `- Chưa có row trong bb-pm DB. Khi user hỏi "task của tôi", "tôi là ai", `,
         `  hãy thành thật: "Mình chưa nhận diện bạn trong hệ thống PM. `,
         `  Báo admin add bạn vào database hoặc chat với bạn từ tài khoản bb-pm đã có sẵn."`,
@@ -590,6 +752,12 @@ async function invokeTool(
   }
 
   if (!tool) {
+    agentLog(ctx, "tool.error", {
+      name,
+      args: parsedArgs,
+      durationMs: 0,
+      error: "Unknown tool",
+    });
     ctx.trace?.toolCalls.push({ name, args: parsedArgs, durationMs: 0, error: "Unknown tool" });
     void audit({ tool: name, argsJson: parsedArgs, errorMessage: `Unknown tool`, ctx, durationMs: 0 });
     return { result: { error: `Unknown tool: ${name}` }, parsedArgs };
@@ -597,14 +765,30 @@ async function invokeTool(
 
   const start = Date.now();
   try {
+    agentLog(ctx, "tool.start", { name, args: parsedArgs });
+    // Internal caller context for tools that need self-scoping. Hidden from
+    // LLM-visible schemas; never include in user-facing replies.
+    if (name === "report.query" && ctx.callerUserId) parsedArgs._callerUserId = ctx.callerUserId;
     const result = await tool.handler(parsedArgs);
     const dur = Date.now() - start;
+    agentLog(ctx, "tool.end", {
+      name,
+      args: parsedArgs,
+      durationMs: dur,
+      result,
+    });
     ctx.trace?.toolCalls.push({ name, args: parsedArgs, durationMs: dur });
     void audit({ tool: name, argsJson: parsedArgs, resultJson: summarize(result), ctx, durationMs: dur });
     return { result, parsedArgs };
   } catch (err: any) {
     const message = err?.message || String(err);
     const dur = Date.now() - start;
+    agentLog(ctx, "tool.error", {
+      name,
+      args: parsedArgs,
+      durationMs: dur,
+      error: message,
+    });
     ctx.trace?.toolCalls.push({ name, args: parsedArgs, durationMs: dur, error: message });
     void audit({ tool: name, argsJson: parsedArgs, errorMessage: message, ctx, durationMs: dur });
     return { result: { error: message }, parsedArgs };

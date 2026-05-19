@@ -8,8 +8,8 @@
 # Per-plugin build outputs — Dockerfile rebuilds them
 bb-pm-tools/dist/
 bb-pm-tools/node_modules/
-openclaw/openclaw/plugins/gapo-work/dist/
-openclaw/openclaw/plugins/gapo-work/node_modules/
+gapo-agent/dist/
+gapo-agent/node_modules/
 
 # Local env & secrets — must NOT be baked into image
 **/.env

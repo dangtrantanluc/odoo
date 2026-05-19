@@ -8,7 +8,11 @@ import { stripMarkdownForGapo } from "./channel-out";
 import { formatResponse } from "./formatter";
 import { tryFastPath, executeFastPath } from "./pre-classifier";
 import { recordRecentTurn } from "./memory";
-import { bbPm } from "./api-client";
+import { getTelemetrySnapshot, recordAgentRunSample } from "./telemetry";
+import { getCachedGapoUser } from "./caller-cache";
+import { getCheckinTelemetrySnapshot, handleCheckinTurn } from "./checkin";
+import { handleActionTurn } from "./action-router";
+import { tryTextToSqlRead } from "./read-router";
 
 /**
  * Channel-agnostic agent entry point. Any channel plugin (Gapo, Slack,
@@ -56,11 +60,30 @@ function ensureRequestId(req: IncomingMessage): string {
   return incoming ?? `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const WEBHOOK_IO_LOG = (process.env.BB_PM_WEBHOOK_IO_LOG ?? "true").toLowerCase() !== "false";
+const WEBHOOK_IO_LOG_MAX_CHARS = Number(process.env.BB_PM_WEBHOOK_IO_LOG_MAX_CHARS ?? 2000);
+
+function truncateWebhookLog(value: string, max = WEBHOOK_IO_LOG_MAX_CHARS): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}…[truncated ${value.length - max} chars]`;
+}
+
+function webhookLog(event: string, fields: Record<string, unknown>) {
+  if (!WEBHOOK_IO_LOG) return;
+  const payload = { ts: new Date().toISOString(), event, ...fields };
+  try {
+    console.log(`[bb-pm-tools/webhook-io] ${truncateWebhookLog(JSON.stringify(payload))}`);
+  } catch {
+    console.log(`[bb-pm-tools/webhook-io] ${event}`);
+  }
+}
+
 export async function handleAgentRun(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean> {
   const requestId = ensureRequestId(req);
+  const startTurn = Date.now();
   res.setHeader("X-Request-Id", requestId);
 
   try {
@@ -83,6 +106,15 @@ export async function handleAgentRun(
       writeJson(res, 400, { error: "Missing `text`" });
       return true;
     }
+    webhookLog("agent_run.request", {
+      requestId,
+      method: req.method,
+      source: body?.source ?? "chat",
+      conversationId: body?.conversationId,
+      correlationId: body?.correlationId,
+      text,
+      textChars: text.length,
+    });
 
     // Rate limit by best-effort client identifier. Channel-supplied
     // correlationId beats raw IP because Gapo webhooks all share the
@@ -94,6 +126,13 @@ export async function handleAgentRun(
     res.setHeader("X-RateLimit-Limit", String(rl.limit));
     res.setHeader("X-RateLimit-Remaining", String(Math.max(0, rl.remaining)));
     if (!rl.ok) {
+      recordAgentRunSample({
+        requestId,
+        source: body?.source,
+        mode: "rate_limited",
+        totalMs: Date.now() - startTurn,
+        error: "rate_limited",
+      });
       res.setHeader("Retry-After", String(rl.retryAfterSec));
       writeJson(res, 429, {
         error: "rate_limited",
@@ -107,6 +146,12 @@ export async function handleAgentRun(
       source: (body?.source as AgentContext["source"]) ?? "chat",
       correlationId: body?.correlationId ?? requestId,
       conversationId: body?.conversationId,
+      externalId: body?.externalId,
+      eventType: body?.eventType,
+      metadata: body?.metadata,
+      skipChannelAck: body?.skipChannelAck === true,
+      trace: { toolCalls: [] },
+      timings: { llmCalls: [] },
     };
 
     // Sprint 8 Day 1 — dedup re-send protection. User spam re-send (vì LLM
@@ -117,9 +162,18 @@ export async function handleAgentRun(
     // → watcher gửi lên Gapo → user thấy message thừa rất khó hiểu (đặc biệt
     // khi cause là watcher tự re-poll, không phải user spam). Fix: trả EMPTY
     // reply + flag dedup=true → watcher detect empty → skip send.
-    if (ctx.source === "chat" && ctx.conversationId) {
+    if (ctx.source === "chat" && ctx.conversationId && !isSlashCommand(text)) {
       const isDup = checkDuplicate(ctx.conversationId, text);
       if (isDup) {
+        recordAgentRunSample({
+          requestId,
+          source: ctx.source,
+          mode: "dedup",
+          totalMs: Date.now() - startTurn,
+          replyBytes: 0,
+          timings: ctx.timings,
+          toolCalls: ctx.trace?.toolCalls,
+        });
         console.log(
           `[bb-pm-tools] agent/run dedup blocked requestId=${requestId} cid=${ctx.conversationId} (silent — no user-facing message)`,
         );
@@ -144,34 +198,127 @@ export async function handleAgentRun(
       try {
         // Resolve callerUserId nếu chưa có (cần cho my_role/my_tasks/slash:role/slash:mytasks)
         if (!ctx.callerUserId) {
-          const m = ctx.conversationId.match(/^gapo:(\d+)$/);
-          if (m) {
-            const u = await bbPm.getUserByGapoCid(m[1]).catch(() => null);
+          const gapoUserId = ctx.externalId;
+          if (gapoUserId) {
+            const threadId = ctx.conversationId?.startsWith("gapo:")
+              ? ctx.conversationId.slice("gapo:".length)
+              : ctx.conversationId;
+            const u = await getCachedGapoUser(gapoUserId, threadId).catch(() => null);
             if (u) ctx.callerUserId = u.id;
           }
+        }
+        const preferCheckinFirst = isCheckinCommand(text) || !isSlashCommand(text);
+        if (preferCheckinFirst) {
+          const checkinReply = await handleCheckinTurn(text, ctx);
+          if (checkinReply) {
+            const reply = stripMarkdownForGapo(checkinReply.reply);
+            recordRecentTurn(ctx.conversationId, text, reply);
+            recordAgentRunSample({
+              requestId,
+              source: ctx.source,
+              mode: "fast_path",
+              totalMs: Date.now() - startTurn,
+              replyBytes: reply.length,
+              timings: ctx.timings,
+              toolCalls: ctx.trace?.toolCalls,
+            });
+            writeJson(res, 200, {
+              reply,
+              channelReply: checkinReply.channelReply,
+              requestId,
+              fastPath: checkinReply.pattern,
+            });
+            return true;
+          }
+        }
+        const actionReply = await handleActionTurn(text, ctx).catch(() => null);
+        if (actionReply) {
+          const reply = stripMarkdownForGapo(actionReply.reply);
+          recordAgentRunSample({ requestId, source: ctx.source, mode: "action_router", totalMs: Date.now() - startTurn, replyBytes: reply.length, timings: ctx.timings, toolCalls: ctx.trace?.toolCalls });
+          console.log(`[bb-pm-tools] agent/run ACTION_ROUTER ok requestId=${requestId} pattern=${actionReply.pattern}`);
+          writeJson(res, 200, { reply, requestId, actionRouter: actionReply.pattern });
+          return true;
         }
         const fp = tryFastPath(text, ctx);
         if (fp) {
           const fpStart = Date.now();
+          webhookLog("fastpath.start", {
+            requestId,
+            pattern: fp.pattern,
+            toolName: fp.toolName,
+            toolArgs: fp.toolArgs ?? {},
+          });
           const fpReply = await executeFastPath(fp, ctx);
           // SKIP formatter cho fast-path: output đã chat-ready (hand-formatted
           // theo pattern). Đẩy qua formatter sẽ trigger LLM rewrite (~30s
           // Qwen) cho output > 350 chars → defeat purpose của fast-path.
           // Vẫn strip markdown để Gapo render sạch.
           const reply = stripMarkdownForGapo(fpReply);
+          if (ctx.timings) ctx.timings.fastPathMs = Date.now() - fpStart;
           recordRecentTurn(ctx.conversationId, text, reply);
+          recordAgentRunSample({
+            requestId,
+            source: ctx.source,
+            mode: "fast_path",
+            totalMs: Date.now() - startTurn,
+            replyBytes: reply.length,
+            timings: ctx.timings,
+            toolCalls: ctx.trace?.toolCalls,
+          });
           console.log(
             `[bb-pm-tools] agent/run FAST_PATH ok requestId=${requestId} pattern=${fp.pattern} ` +
               `tookMs=${Date.now() - fpStart} bytes=${reply.length}`,
           );
+          webhookLog("fastpath.end", {
+            requestId,
+            pattern: fp.pattern,
+            durationMs: Date.now() - fpStart,
+            reply,
+            replyChars: reply.length,
+          });
           writeJson(res, 200, { reply, requestId, fastPath: fp.pattern });
           return true;
         }
       } catch (err: any) {
+        // Slash commands are explicit user actions. If their backing tool is
+        // down, return a visible error instead of falling through to a slow LLM
+        // path that can still end with no useful reply.
+        if (isSlashCommand(text)) {
+          const reply =
+            "Lệnh này đang gặp lỗi khi lấy dữ liệu PM. Bạn thử lại sau ít phút nhé.";
+          webhookLog("fastpath.slash_error_reply", {
+            requestId,
+            durationMs: Date.now() - startTurn,
+            error: err?.message ?? String(err),
+          });
+          writeJson(res, 200, { reply, requestId, fastPath: "slash:error" });
+          return true;
+        }
         // Fast-path fail (vd DB query lỗi) → fall through LLM path safe.
+        webhookLog("fastpath.error", {
+          requestId,
+          durationMs: Date.now() - startTurn,
+          error: err?.message ?? String(err),
+        });
         console.warn(
           `[bb-pm-tools] fast-path failed (fall through LLM): ${err?.message ?? err}`,
         );
+      }
+    }
+
+    if (ctx.source === "chat" && ctx.conversationId) {
+      const readReply = await tryTextToSqlRead(text).catch(() => null);
+      if (readReply) {
+        const reply = stripMarkdownForGapo(readReply.reply);
+        const readMode = readReply.pattern === "read:ambiguous_clarified"
+          ? "ambiguous_read"
+          : readReply.pattern === "read:keyword_fallback"
+            ? "keyword_fallback"
+            : "text_to_sql";
+        recordAgentRunSample({ requestId, source: ctx.source, mode: readMode, totalMs: Date.now() - startTurn, replyBytes: reply.length, timings: ctx.timings, toolCalls: ctx.trace?.toolCalls });
+        console.log(`[bb-pm-tools] agent/run TEXT_TO_SQL ok requestId=${requestId} pattern=${readReply.pattern}`);
+        writeJson(res, 200, { reply, requestId, readRouter: readReply.pattern });
+        return true;
       }
     }
 
@@ -179,8 +326,19 @@ export async function handleAgentRun(
     // batch size (~6) để tránh timeout cascade khi peak burst. Reject 503
     // nếu queue cũng full, caller (Gapo webhook) đã ack source thì user
     // không bị treo — chỉ Gapo retry sau retryAfterSec.
+    const queueStart = Date.now();
     const slot = await acquireSlot();
+    if (ctx.timings) ctx.timings.queueWaitMs = Date.now() - queueStart;
     if (!slot.ok) {
+      recordAgentRunSample({
+        requestId,
+        source: ctx.source,
+        mode: "overloaded",
+        totalMs: Date.now() - startTurn,
+        timings: ctx.timings,
+        toolCalls: ctx.trace?.toolCalls,
+        error: slot.reason,
+      });
       console.warn(
         `[bb-pm-tools] agent/run rejected requestId=${requestId} reason=${slot.reason} ` +
           `metrics=${JSON.stringify(getMetrics())}`,
@@ -199,6 +357,7 @@ export async function handleAgentRun(
     let rawReply: string;
     try {
       rawReply = await runAgent(text, ctx);
+      if (ctx.timings) ctx.timings.runAgentMs = Date.now() - start;
     } finally {
       slot.release();
     }
@@ -206,19 +365,52 @@ export async function handleAgentRun(
     // còn lộ DB term, JSON, error) thành reply chat-ready: skip nếu đã
     // sạch, match template nếu khớp keyword, LLM Qwen rewrite cho free-form.
     // Skip cho cli/eval source. Fail-safe: nếu fail/timeout → trả raw.
+    const formatterStart = Date.now();
     const formatted = await formatResponse(rawReply, ctx, text);
+    if (ctx.timings) ctx.timings.formatterMs = Date.now() - formatterStart;
     // Strip markdown markers (**, __, ~~, `, # headers) — defense in depth
     // sau formatter để chắc chắn Gapo không thấy raw markup.
     const reply = stripMarkdownForGapo(formatted);
+    recordAgentRunSample({
+      requestId,
+      source: ctx.source,
+      mode: "react_fallback",
+      totalMs: Date.now() - startTurn,
+      replyBytes: reply.length,
+      timings: ctx.timings,
+      toolCalls: ctx.trace?.toolCalls,
+    });
     const m = getMetrics();
     console.log(
       `[bb-pm-tools] agent/run ok requestId=${requestId} source=${ctx.source} ` +
-        `tookMs=${Date.now() - start} bytes=${reply.length} ` +
+        `tookMs=${Date.now() - start} totalMs=${Date.now() - startTurn} bytes=${reply.length} ` +
+        `queueWaitMs=${ctx.timings?.queueWaitMs ?? 0} runAgentMs=${ctx.timings?.runAgentMs ?? 0} ` +
+        `formatterMs=${ctx.timings?.formatterMs ?? 0} llmCalls=${(ctx.timings?.llmCalls ?? [])
+          .map((c) => `${c.label}:${c.latencyMs}`)
+          .join(",") || "0"} ` +
         `inFlight=${m.inFlight} queue=${m.queueDepth}`,
     );
+    webhookLog("agent_run.response", {
+      requestId,
+      source: ctx.source,
+      durationMs: Date.now() - startTurn,
+      runAgentMs: ctx.timings?.runAgentMs ?? 0,
+      formatterMs: ctx.timings?.formatterMs ?? 0,
+      reply,
+      replyChars: reply.length,
+      toolCalls: ctx.trace?.toolCalls ?? [],
+      llmCalls: ctx.timings?.llmCalls ?? [],
+    });
     writeJson(res, 200, { reply, requestId });
     return true;
   } catch (err: any) {
+    recordAgentRunSample({
+      requestId,
+      source: req.method ?? "unknown",
+      mode: "error",
+      totalMs: Date.now() - startTurn,
+      error: err?.message || String(err),
+    });
     console.error(
       `[bb-pm-tools] agent/run error requestId=${requestId}:`,
       err?.message || err,
@@ -228,6 +420,15 @@ export async function handleAgentRun(
     }
     return true;
   }
+}
+
+export function isSlashCommand(text: string): boolean {
+  return /^\s*\/[a-z][a-z0-9_-]*(?:\s|$)/i.test(text);
+}
+
+function isCheckinCommand(text: string): boolean {
+  return /^\s*\/(?:checkin|worklog|project)(?:\s|$)/i.test(text) ||
+    /^\s*(?:update|cập nhật|cap nhat)\s+worklog\s*$/iu.test(text);
 }
 
 /**
@@ -246,6 +447,8 @@ export async function handleAgentMetrics(
   }
   writeJson(res, 200, {
     metrics: getMetrics(),
+    telemetry: getTelemetrySnapshot(),
+    checkin: getCheckinTelemetrySnapshot(),
     timestamp: new Date().toISOString(),
   });
   return true;

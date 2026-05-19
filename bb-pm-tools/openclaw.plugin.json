@@ -5,9 +5,17 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "webhookPath": {
+      "agentRunPath": {
         "type": "string",
-        "default": "/api/plugins/gapo-work/webhook"
+        "default": "/api/plugins/bb-pm/agent/run"
+      },
+      "metricsPath": {
+        "type": "string",
+        "default": "/api/plugins/bb-pm/agent/metrics"
+      },
+      "healthPath": {
+        "type": "string",
+        "default": "/api/plugins/bb-pm/health"
       }
     }
   }

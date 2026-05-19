@@ -1,11 +1,38 @@
 # PM Operations Agent — Process & Progress Tracker
 
 > Nhật ký tiến độ build hệ thống **PM Operations Agent** (OpenClaw + bb-pm).
-> Cập nhật lần cuối: **2026-04-25 17:00** — Sprint 6.2 (4 phases) + Sprint 3.5 scaffold DONE. 5 branches cục bộ chờ push lên GitHub.
+> Cập nhật lần cuối: **2026-05-18** — production path đã chuẩn hóa qua `gapo-agent`, có Redis runtime support, fast-path hardening và daily check-in workflow đang hoạt động.
 
 Tham chiếu thiết kế: [PMOperationsAgent.md](./PMOperationsAgent.md) · [bb-pm/ARCHITECTURE.md](./bb-pm/ARCHITECTURE.md)
 
 ---
+
+## 0.1 Snapshot hiện tại (2026-05-18)
+
+```text
+GapoWork -> gapo-agent -> bb-pm-tools -> bb-pm API -> PostgreSQL
+```
+
+- `gapo-agent` là channel adapter production hiện tại; `agent/` Python chỉ còn là prototype.
+- `bb-pm-tools` dùng Qwen self-hosted, fast-path, formatter, workflow registry và cron check-in.
+- Stack compose hiện có `bb_pm_db`, `bb_pm_redis`, `bb_pm_api`, `bb_pm_web`, `openclaw`.
+- Daily check-in đã có session API, reminder workflow và prompt recent-first chỉ hiển thị 3 project gần đây.
+
+### Daily check-in hiện tại
+
+```text
+Hôm nay bạn làm project nào?
+
+Gần đây:
+1. ...
+2. ...
+3. ...
+
+Hoặc nhập tên project khác.
+```
+
+Flow: `AWAITING_PROJECT -> AWAITING_UPDATE -> COMPLETED`.
+Người dùng có thể chọn bằng quick reply, số thứ tự hoặc gõ tên project khác. Workflow liên quan: `noon_checkin_reminder`, `eod_checkin_reminder`, `missing_checkin_followup`.
 
 ## 0. Tổng quan trạng thái
 
@@ -14,7 +41,7 @@ Tham chiếu thiết kế: [PMOperationsAgent.md](./PMOperationsAgent.md) · [bb
 | **bb-pm API** (Fastify + Prisma) | ✅ Sprint 1–6.1 done | 18 module, JWT + X-Agent-Token, audit + blocker + memory + weekly report + meetings + channel identity, 5 migration applied |
 | **bb-pm Web** (React SPA) | ✅ Sprint 1 done | Shell + login/register + dashboard placeholder |
 | **OpenClaw — `bb-pm-tools` plugin** | ✅ Sprint 1–5 done | 19 tools (Level 1 + 2 + 3 + 4), ReAct + memory recall + meeting extraction |
-| **OpenClaw — `gapo-work` plugin** | ✅ Refactored | Channel adapter thuần: inbound webhook + outbound `/send` |
+| **OpenClaw — `gapo-agent` plugin** | ✅ Refactored | Channel adapter thuần: inbound webhook + outbound `/send` |
 | **Channels** | 🟡 Gapo only | Zalo / Slack / Telegram / Gmail chưa |
 | **LLM self-hosted** | ✅ Qwen | `Qwen/Qwen3.6-27B-FP8` @ `http://100.108.110.17:8000/v1`, tool-calling OK |
 | **End-to-end verified** | ✅ 2026-04-24 | 9 flow smoke-tested: overdue / digest / hygiene / blocker / follow-up / weekly report / memory recall / Gapo webhook / meeting approval |
@@ -39,8 +66,8 @@ Chú thích: ✅ done · 🟡 partial · ⏳ chưa bắt đầu · ❌ thiếu d
                         │  webhook
                         ▼
  ┌────────────────────────────────────────────┐
- │  gapo-work plugin  (channel adapter)       │
- │  /openclaw/plugins/gapo-work/              │
+ │  gapo-agent plugin  (channel adapter)       │
+ │  /openclaw/plugins/gapo-agent/              │
  │  • webhook.ts  — parse Gapo payload        │
  │  • send.ts     — outbound /send endpoint   │
  │  • client.ts   — gọi Gapo API              │
@@ -56,7 +83,7 @@ Chú thích: ✅ done · 🟡 partial · ⏳ chưa bắt đầu · ❌ thiếu d
  │  • tools.ts             — 15 tool          │
  │  • scheduler.ts         — cron → /send     │
  │  • cooldown.ts          — TTL map          │
- │  • channel-out.ts       — → gapo-work/send │
+ │  • channel-out.ts       — → gapo-agent/send │
  │  Secret: BB_PM_AGENT_TOKEN, LLM key        │
  └────────────┬───────────────────────────────┘
               │ HTTP + X-Agent-Token
@@ -77,7 +104,7 @@ Chú thích: ✅ done · 🟡 partial · ⏳ chưa bắt đầu · ❌ thiếu d
 
 **Nguyên tắc kiến trúc:**
 - Mỗi layer chỉ biết về layer kế tiếp qua HTTP, không import chéo.
-- Gapo credentials **chỉ tồn tại trong `gapo-work`**. Scheduler / follow_up_tool gọi `gapo-work /send` với `X-Plugin-Token` chung.
+- Gapo credentials **chỉ tồn tại trong `gapo-agent`**. Scheduler / follow_up_tool gọi `gapo-agent /send` với `X-Plugin-Token` chung.
 - bb-pm-tools **chỉ** giữ `BB_PM_AGENT_TOKEN` + LLM key — không chạm Gapo API.
 
 ---
@@ -165,7 +192,7 @@ Path: [bb-pm-tools](./bb-pm-tools/) (sibling với `bb-pm/`, KHÔNG phải `bb-p
 
 **Điều phối (Level 2):**
 - `update_task_status` · `create_action_item`
-- `send_follow_up(userId, taskId, question)` — lookup GapoUserMap, cooldown 24h, POST qua gapo-work /send
+- `send_follow_up(userId, taskId, question)` — lookup GapoUserMap, cooldown 24h, POST qua gapo-agent /send
 - `post_blocker(taskId, description, severity)` — ghi vào bb-pm API
 
 **Tổng hợp (Level 3 — Sprint 4):**
@@ -192,15 +219,15 @@ Path: [bb-pm-tools](./bb-pm-tools/) (sibling với `bb-pm/`, KHÔNG phải `bb-p
 | Meeting extraction (strict JSON output + loose parser) (Sprint 5) | `src/meeting.ts` | ✅ |
 | Shared AgentContext (correlation + conversation IDs) | `src/types.ts` | ✅ |
 | OpenClaw HTTP handler (`registerHttpRoute`) | `src/webhook.ts` + `index.ts` | ✅ |
-| Outbound → gapo-work /send | `src/channel-out.ts` | ✅ |
+| Outbound → gapo-agent /send | `src/channel-out.ts` | ✅ |
 | Cron scheduler | `src/scheduler.ts` | ✅ |
 | Cooldown TTL store | `src/cooldown.ts` | ✅ in-memory (Redis swap sau) |
 | CLI tester | `src/cli.ts` | ✅ |
 | pgvector semantic recall | — | ⏳ S4.5 |
 
-### 3.2 `gapo-work` (channel adapter)
+### 3.2 `gapo-agent` (channel adapter)
 
-Path: [openclaw/openclaw/plugins/gapo-work](./openclaw/openclaw/plugins/gapo-work/)
+Path: [openclaw/openclaw/plugins/gapo-agent](./openclaw/openclaw/plugins/gapo-agent/)
 
 **Files hoạt động (Phase 1 refactor xoá hết PM logic):**
 
@@ -210,7 +237,7 @@ Path: [openclaw/openclaw/plugins/gapo-work](./openclaw/openclaw/plugins/gapo-wor
 | `webhook.ts` | Parse Gapo payload, forward HTTP → bb-pm-tools `/agent/run`, reply về Gapo |
 | `send.ts` | POST `/send` — nhận `{conversationId, text}` với `X-Plugin-Token`, gọi Gapo API |
 | `client.ts` | Outbound Gapo message API client |
-| `config.ts` | Load `~/.openclaw/plugins/gapo-work/config.json` + env |
+| `config.ts` | Load `~/.openclaw/plugins/gapo-agent/config.json` + env |
 
 **Đã xoá:** các file PM logic cũ (`parser.ts`, `db.ts`, RPC client, `service.ts`, `formatter.ts`, `types.ts`) + tất cả `*.js` stale ở root.
 
@@ -273,7 +300,7 @@ DB:    tasks.id=3.issues = "[2026-04-24 07:51] [MED] chờ design review"
 ### 5.4 Gapo webhook simulation
 
 ```
-POST /api/plugins/gapo-work/webhook
+POST /api/plugins/gapo-agent/webhook
 Body: {message:{text:"[GAPO_USER: pm] hygiene check", thread:{id:"test-thread-123"}}}
 → ack 200 {ok: true}
 → async forward sang /agent/run → reply → Gapo API (fake thread sẽ fail — expected)
@@ -301,15 +328,15 @@ id | source | tool                   | duration
 | OpenClaw config | `~/.openclaw/openclaw.json` | Qwen provider `berp-openai`, 2 plugin entries, gateway :18789 |
 | bb-pm API env | `bb-pm/.env` | `AGENT_API_TOKEN`, `AGENT_USER_EMAIL`, `DATABASE_URL` |
 | bb-pm-tools env | `~/.openclaw/plugins/bb-pm-tools/.env` | LLM Qwen, `BB_PM_AGENT_TOKEN`, `GAPO_SEND_URL`, `GAPO_SEND_TOKEN` |
-| gapo-work config | `~/.openclaw/plugins/gapo-work/config.json` | `gapo.botToken`, `orchestrator.url`, `sendToken` |
+| gapo-agent config | `~/.openclaw/plugins/gapo-agent/config.json` | `gapo.botToken`, `orchestrator.url`, `sendToken` |
 
 **Shared secrets (generated):**
 
 | Name | Value (hex 32) | Dùng ở |
 |---|---|---|
 | `AGENT_API_TOKEN` / `BB_PM_AGENT_TOKEN` | `e4def90c...f027d2f` | bb-pm API ↔ bb-pm-tools |
-| `GAPO_SEND_TOKEN` / `sendToken` | `f2ccf92f...597c7a93` | bb-pm-tools ↔ gapo-work |
-| Gapo bot token | `a92772667cfe48929f4c847dc6cc8ce4` | gapo-work ↔ Gapo API (**chưa rotate** — cần làm ở Gapo portal) |
+| `GAPO_SEND_TOKEN` / `sendToken` | `f2ccf92f...597c7a93` | bb-pm-tools ↔ gapo-agent |
+| Gapo bot token | `a92772667cfe48929f4c847dc6cc8ce4` | gapo-agent ↔ Gapo API (**chưa rotate** — cần làm ở Gapo portal) |
 
 ---
 
@@ -339,7 +366,7 @@ Theo [PMOperationsAgent.md §4.7](./PMOperationsAgent.md):
 - [ ] **Seed `gapo_user_maps`** — map user bb-pm → gapo_thread_id để `send_follow_up` dùng được
 - [ ] Set **`CRON_DAILY_DIGEST_TARGET`** = conversation_id phòng PM thật → restart gateway
 - [ ] Set **`CRON_WEEKLY_HYGIENE_TARGET`** = conversation_id phòng PM thật
-- [ ] Public URL cho Gapo webhook: firewall/DNS cho `http://<public>:18789/api/plugins/gapo-work/webhook`
+- [ ] Public URL cho Gapo webhook: firewall/DNS cho `http://<public>:18789/api/plugins/gapo-agent/webhook`
 - [ ] **Rotate Gapo bot token** ở Gapo developer portal (không tự làm được)
 
 ### 8.2 Sprint 3 nice-to-have
@@ -394,12 +421,12 @@ Theo [PMOperationsAgent.md §4.7](./PMOperationsAgent.md):
 | 2026-04-23 | Tool extension: snapshot/blocked/owner/update-status/create-action + find/search | Dat |
 | 2026-04-24 sáng | Tạo `PROCESS.md`, plan Sprint 3 + browser capability | Dat |
 | 2026-04-24 sáng | Config token, env init cho bb-pm-tools | Dat |
-| **2026-04-24 (Phase 1)** | **Refactor `gapo-work` thành channel adapter thuần**: xoá các file PM logic (parser/db/rpc/service/formatter), bỏ dep `pg`, webhook chuyển sang forward HTTP tới bb-pm-tools `/agent/run`. Bỏ Gapo inbound/async-reply khỏi bb-pm-tools. | Claude |
-| **2026-04-24 (Phase 2)** | **Outbound Gapo centralized ở `gapo-work`**: thêm `POST /api/plugins/gapo-work/send` với `X-Plugin-Token` shared secret. Xoá `bb-pm-tools/src/gapo-channel.ts`, scheduler dùng `channel-out.sendToGapo()` gọi vào `/send`. | Claude |
+| **2026-04-24 (Phase 1)** | **Refactor `gapo-agent` thành channel adapter thuần**: xoá các file PM logic (parser/db/rpc/service/formatter), bỏ dep `pg`, webhook chuyển sang forward HTTP tới bb-pm-tools `/agent/run`. Bỏ Gapo inbound/async-reply khỏi bb-pm-tools. | Claude |
+| **2026-04-24 (Phase 2)** | **Outbound Gapo centralized ở `gapo-agent`**: thêm `POST /api/plugins/gapo-agent/send` với `X-Plugin-Token` shared secret. Xoá `bb-pm-tools/src/gapo-channel.ts`, scheduler dùng `channel-out.sendToGapo()` gọi vào `/send`. | Claude |
 | **2026-04-24 (Sprint 3 — bb-pm API)** | Extend `auth.ts` nhận `X-Agent-Token`. Prisma: thêm model `AgentAuditLog`, `TaskBlocker`, enum `AgentAuditSource`/`BlockerSeverity`. Migration `20260424000000_add_agent_tables`. Seed `pm-agent@bluebolt.local` MANAGER. | Claude |
 | **2026-04-24 (Sprint 3 — routes)** | Thêm `/tasks/overdue`, `/stale`, `/hygiene`, `/:id/blocker`, `/projects/digest`, `/agent/audit` (POST+GET), `/agent/gapo-thread/:userId`. | Claude |
-| **2026-04-24 (Sprint 3 — plugin)** | Thêm `send_follow_up` (lookup GapoUserMap + cooldown 24h + POST gapo-work /send), `post_blocker`. Tạo `cooldown.ts` in-memory. Orchestrator system prompt cập nhật 9 nguyên tắc Level 1+2. | Claude |
-| **2026-04-24 (Config)** | Sửa typo `http://attp://` → `http://100.108.110.17:8000/v1` trong openclaw.json. Đổi LLM sang `Qwen/Qwen3.6-27B-FP8`. Generate `GAPO_SEND_TOKEN` hex 32, match ở 2 phía. Tách config sensitive ra `~/.openclaw/plugins/bb-pm-tools/.env` + `~/.openclaw/plugins/gapo-work/config.json`. Gitignore `config.json`, `.env*`. | Claude |
+| **2026-04-24 (Sprint 3 — plugin)** | Thêm `send_follow_up` (lookup GapoUserMap + cooldown 24h + POST gapo-agent /send), `post_blocker`. Tạo `cooldown.ts` in-memory. Orchestrator system prompt cập nhật 9 nguyên tắc Level 1+2. | Claude |
+| **2026-04-24 (Config)** | Sửa typo `http://attp://` → `http://100.108.110.17:8000/v1` trong openclaw.json. Đổi LLM sang `Qwen/Qwen3.6-27B-FP8`. Generate `GAPO_SEND_TOKEN` hex 32, match ở 2 phía. Tách config sensitive ra `~/.openclaw/plugins/bb-pm-tools/.env` + `~/.openclaw/plugins/gapo-agent/config.json`. Gitignore `config.json`, `.env*`. | Claude |
 | **2026-04-24 (Fix runtime)** | Refactor bb-pm-tools `index.ts` dùng `api.registerHttpRoute` (chuẩn OpenClaw SDK). Viết lại `webhook.ts` parse raw IncomingMessage. Tạo `env.ts` tự load .env. Thêm `whatwg-url` dep (node-fetch@2 trên Node 24). Link-install với `--dangerously-force-unsafe-install` (scanner false positive). | Claude |
 | **2026-04-24 (Deploy)** | Apply Prisma migration, seed pm-agent, start bb-pm API :4000, restart OpenClaw gateway systemd (8 plugins load), smoke test 4 flow + audit log. **Pipeline end-to-end OK**. | Claude |
 | **2026-04-24 (Odoo removal)** | Xoá toàn bộ Odoo footprint: `docker compose down -v` cho stack Odoo, xoá folder `project_addons/`, `apps/redesign/`, `services/`, `pm-odoo/`, `ops/`, `init/`, `data/backups/`, `config/`, `minio-data`, `agent` symlink, `docker-compose.yaml` root, `.env` root, `odoo.conf`, `cookie.txt`. Xoá `migrate-from-odoo.ts` + script `migrate:odoo`. Clean tham chiếu Odoo trong bb-pm docs/schema/env. Viết lại `CLAUDE.md` cho stack mới. | Claude |
@@ -424,7 +451,7 @@ Theo [PMOperationsAgent.md §4.7](./PMOperationsAgent.md):
 - Kiến trúc bb-pm: [bb-pm/ARCHITECTURE.md](./bb-pm/ARCHITECTURE.md)
 - Setup dev: [bb-pm/WALKTHROUGH.md](./bb-pm/WALKTHROUGH.md)
 - bb-pm-tools README: [bb-pm-tools/README.md](./bb-pm-tools/README.md)
-- gapo-work README: [openclaw/openclaw/plugins/gapo-work/README.md](./openclaw/openclaw/plugins/gapo-work/README.md)
+- gapo-agent README: [openclaw/openclaw/plugins/gapo-agent/README.md](./openclaw/openclaw/plugins/gapo-agent/README.md)
 - Skill prompts: [skill/](./skill/)
 
 ---
@@ -445,11 +472,11 @@ cd /home/bbsw/pm/bb-pm && pnpm --filter @bb-pm/api dev
 
 # Build plugins sau khi sửa code
 cd /home/bbsw/pm/bb-pm-tools && node node_modules/typescript/bin/tsc
-cd /home/bbsw/pm/openclaw/openclaw/plugins/gapo-work && node node_modules/typescript/bin/tsc
+cd /home/bbsw/pm/openclaw/openclaw/plugins/gapo-agent && node node_modules/typescript/bin/tsc
 
 # Reload plugin vào OpenClaw
 openclaw plugins install --dangerously-force-unsafe-install --link /home/bbsw/pm/bb-pm-tools
-rm -rf ~/.openclaw/extensions/gapo-work && openclaw plugins install --link /home/bbsw/pm/openclaw/openclaw/plugins/gapo-work
+rm -rf ~/.openclaw/extensions/gapo-agent && openclaw plugins install --link /home/bbsw/pm/openclaw/openclaw/plugins/gapo-agent
 openclaw gateway stop && sleep 2 && openclaw gateway start
 ```
 
@@ -469,7 +496,7 @@ curl -X POST http://localhost:18789/api/plugins/bb-pm/agent/run \
   -d '{"text":"task nào đang quá hạn?","source":"cli"}'
 
 # Gapo inbound simulation
-curl -X POST http://localhost:18789/api/plugins/gapo-work/webhook \
+curl -X POST http://localhost:18789/api/plugins/gapo-agent/webhook \
   -H "Content-Type: application/json" \
   -d '{"message":{"text":"[GAPO_USER: pm] hygiene check","user":{"name":"pm"},"thread":{"id":"TEST"}}}'
 ```
@@ -591,7 +618,7 @@ plugin bucket vì OpenClaw đã rate-limit upstream ở `/agent/run` (Phase 1).
 
 Branch `phase5-browser-capability` (1 commit, 18 files / ~1.3k lines).
 
-**Plugin mới `browser-tools/`** (sibling của bb-pm-tools, gapo-work):
+**Plugin mới `browser-tools/`** (sibling của bb-pm-tools, gapo-agent):
 - `src/browser.ts` — singleton Chromium với persisted storage state, lazy
   launch, auto-relaunch khi crash
 - `src/gapo-actions.ts` — 4 action: `gapoFindUser`, `gapoSendDm`,
@@ -607,7 +634,7 @@ Branch `phase5-browser-capability` (1 commit, 18 files / ~1.3k lines).
 - `README.md` đầy đủ + `.env.example`
 
 **Wire fallback vào `bb-pm-tools/src/tools.ts`:**
-- `send_follow_up` giờ thử bot API trước (ChannelIdentity → gapo-work /send),
+- `send_follow_up` giờ thử bot API trước (ChannelIdentity → gapo-agent /send),
   nếu `no_gapo_thread` → fallback gọi `browser-tools /send-dm` qua
   `sendDmViaBrowser()`.
 - Response thêm `deliveredVia: "gapo-bot" | "browser"` để audit log + LLM
@@ -672,7 +699,7 @@ Remote hiện tại: `https://github.com/dangtrantanluc/odoo` (tên legacy từ 
 | 4.1 | Hot-register cron | `scheduler.ts` syncRegistry poll loop 60s — register/unregister live không cần restart gateway | ✅ verified lifecycle (40s register, 60s unregister) |
 | 4.2 | Golden eval v2.1 | Real seeded task IDs (#5/#4/#7), real users, relaxed AUTOMATION confirm-flow expectations | ✅ AUTOMATION 0% → 100% |
 | LLM | Multi-provider Gemini | `src/llm.ts` `provider?` per-call option, `src/config.ts` `llm.{default,gemini}` split, `src/bench-llm.ts` benchmark | ✅ Gemini-flash 14x faster trên 1 case (free quota 20 req/day blocking full bench) |
-| Gapo fix | parseConversationTarget | `openclaw/plugins/gapo-work/client.ts` parse "dm:"/"collab:" prefix → `receiver_id`/`collab_id` field. Thay vì luôn dùng `thread_id`. | ✅ Fix bug 400 invalid_parameters cho group sends |
+| Gapo fix | parseConversationTarget | `openclaw/plugins/gapo-agent/client.ts` parse "dm:"/"collab:" prefix → `receiver_id`/`collab_id` field. Thay vì luôn dùng `thread_id`. | ✅ Fix bug 400 invalid_parameters cho group sends |
 
 ### Defense-in-depth stack hoàn chỉnh
 

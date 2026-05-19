@@ -1,204 +1,157 @@
 services:
-
-  # ──────────────────────────────────────────────
-  # Database
-  # ──────────────────────────────────────────────
-  db:
-    image: pgvector/pgvector:pg16
-    container_name: project_management_db
-    restart: always
+  bb_pm_db:
+    image: postgres:16-alpine
+    container_name: bb_pm_db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
-      POSTGRES_DB: ${POSTGRES_DB:-project_management}
+      POSTGRES_USER: ${POSTGRES_USER:-bbpm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bbpm_pwd}
+      POSTGRES_DB: ${POSTGRES_DB:-bb_pm}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init:/docker-entrypoint-initdb.d
-    networks:
-      - pm_network
+      - bb_pm_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-project_management}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bbpm} -d ${POSTGRES_DB:-bb_pm}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - pm_bb_pm_net
 
-  # ──────────────────────────────────────────────
-  # Redis
-  # ──────────────────────────────────────────────
-  redis:
-    image: redis:7.0-alpine
-    container_name: project_management_redis
-    restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123@}
+  bb_pm_redis:
+    image: redis:7-alpine
+    container_name: bb_pm_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "${REDIS_PORT:-6379}:6379"
-    networks:
-      - pm_network
-  # ──────────────────────────────────────────────
-  
-  web:
-    image: odoo:17.0
-    container_name: project_management_web
-    restart: always
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "8069:8069"
     volumes:
-      - ./odoo/custom_addons:/mnt/extra-addons
-      - ./config:/etc/odoo
-    environment:
-      - HOST=db
-      - USER=admin
-      - PASSWORD=admin123
-    networks:
-      - pm_network
-      
-  # ──────────────────────────────────────────────
-  # AI Agent (FastAPI)
-  # ──────────────────────────────────────────────
-  agent:
-    build:
-      context: ./agent
-      dockerfile: Dockerfile
-    image: bb_pm_agent:latest
-    container_name: project_management_agent
-    restart: always
-    volumes:
-      - ./.env:/.env:ro
-    ports:
-      - "8001:8001"
-    environment:
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
-      - MINIO_BUCKET=${MINIO_BUCKET:-file-storage}
-      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      minio:
-        condition: service_healthy
-    networks:
-      - pm_network
-
-  # ──────────────────────────────────────────────
-  # Backend (FastAPI)
-  # ──────────────────────────────────────────────
-  # backend:
-  #   build:
-  #     context: ./pm-be
-  #     dockerfile: Dockerfile
-  #   container_name: project_management_backend
-  #   restart: always
-  #   environment:
-  #     DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@db:5432/${POSTGRES_DB:-project_management}
-  #     SECRET_KEY: ${SECRET_KEY:-09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7}
-  #     ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
-  #     REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-  #     MINIO_ENDPOINT: minio:9000
-  #     MINIO_PUBLIC_ENDPOINT: "https://management1.maximus-nhon.online/api/files"
-  #     MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-  #     MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-  #     MINIO_BUCKET: ${MINIO_BUCKET:-file-storage}
-
-  #   ports:
-  #     - "8000:8000"
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   networks:
-  #     - pm_network
-
-  # # ──────────────────────────────────────────────
-  # # Frontend (React / Vite → Nginx)
-  # # ──────────────────────────────────────────────
-  # frontend:
-  #   build:
-  #     context: ./pm-fe
-  #     dockerfile: Dockerfile
-  #     args:
-  #       # Browser talks directly to the host-exposed backend port
-  #       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
-  #   container_name: project_management_frontend
-  #   restart: always
-  #   ports:
-  #     - "3000:80"
-  #   depends_on:
-  #     - backend
-  #   networks:
-  #     - pm_network
-
-  minio:
-    image: minio/minio
-    container_name: project_management_minio
-    restart: always
-    volumes:
-      - ./minio-data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin123}"
-    command: server /data --console-address ":9001"
+      - bb_pm_redis_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 3s
       retries: 5
     networks:
-      - pm_network
-  # # ──────────────────────────────────────────────
-  # # OpenSearch
-  # # ──────────────────────────────────────────────
-  # opensearch-node1:
-  #   image: opensearchproject/opensearch:latest
-  #   container_name: opensearch-node1
-  #   environment:
-  #     - cluster.name=opensearch-cluster
-  #     - node.name=opensearch-node1
-  #     - discovery.type=single-node
-  #     - bootstrap.memory_lock=true
-  #     - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-  #     - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-myStrongPassword123!}
-  #   ulimits:
-  #     memlock:
-  #       soft: -1
-  #       hard: -1
-  #   volumes:
-  #     - opensearch-data:/usr/share/opensearch/data
-  #   ports:
-  #     - "9200:9200"
-  #     - "9600:9600"
-  #   networks:
-  #     - pm_network
+      - pm_bb_pm_net
 
-  # opensearch-dashboards:
-  #   image: opensearchproject/opensearch-dashboards:latest
-  #   container_name: opensearch-dashboards
-  #   ports:
-  #     - "5601:5601"
-  #   environment:
-  #     OPENSEARCH_HOSTS: '["https://opensearch-node1:9200"]'
-  #     OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-myStrongPassword123!}
-  #   depends_on:
-  #     - opensearch-node1
-  #   networks:
-  #     - pm_network
+  bb_pm_api:
+    build:
+      context: ./bb-pm
+      dockerfile: apps/api/Dockerfile
+    container_name: bb_pm_api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-bbpm}:${POSTGRES_PASSWORD:-bbpm_pwd}@bb_pm_db:5432/${POSTGRES_DB:-bb_pm}
+      JWT_SECRET: ${JWT_SECRET:-change-me-super-secret-64-chars-minimum-please-rotate}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      API_PORT: 4000
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:-}
+      AGENT_USER_EMAIL: ${AGENT_USER_EMAIL:-pm-agent@bluebolt.local}
+      REDIS_URL: redis://bb_pm_redis:6379
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: ${MINIO_BUCKET:-bb-pm-avatars}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    depends_on:
+      bb_pm_db:
+        condition: service_healthy
+      bb_pm_redis:
+        condition: service_healthy
+    networks:
+      - pm_bb_pm_net
+
+  bb_pm_web:
+    build:
+      context: ./bb-pm
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:4000/api/v1}
+    container_name: bb_pm_web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-5173}:80"
+    depends_on:
+      - bb_pm_api
+    networks:
+      - pm_bb_pm_net
+
+  openclaw:
+    build:
+      context: .
+      dockerfile: docker/openclaw/Dockerfile
+    container_name: openclaw
+    restart: unless-stopped
+    environment:
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      BB_PM_API_URL: http://bb_pm_api:4000/api/v1
+      BB_PM_AGENT_TOKEN: ${AGENT_API_TOKEN:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-default}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-nokey}
+      LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen3.6-27B-FP8}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      NINE_ROUTER_BASE_URL: ${NINE_ROUTER_BASE_URL:-}
+      NINE_ROUTER_API_KEY: ${NINE_ROUTER_API_KEY:-}
+      NINE_ROUTER_MODEL: ${NINE_ROUTER_MODEL:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-}
+      GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-}
+      GAPO_API_URL: ${GAPO_API_URL:-https://api.gapowork.vn/3rd-bot/v1.0/3rd/messages}
+      GAPO_BOT_TOKEN: ${GAPO_BOT_TOKEN:-}
+      GAPO_BOT_ID: ${GAPO_BOT_ID:-}
+      GAPO_DRY_RUN: ${GAPO_DRY_RUN:-false}
+      GAPO_SEND_TOKEN: ${GAPO_SEND_TOKEN:-}
+      GAPO_SEND_URL: http://localhost:18789/api/plugins/gapo-agent/send
+      BROWSER_TOOLS_TOKEN: ${BROWSER_TOOLS_TOKEN:-${GAPO_SEND_TOKEN:-}}
+      BROWSER_TOOLS_SEND_URL: http://localhost:18789/api/plugins/browser-tools/send-dm
+      BROWSER_TOOLS_FIND_URL: http://localhost:18789/api/plugins/browser-tools/find-user
+      BROWSER_TOOLS_FIND_AND_OPEN_DM_URL: http://localhost:18789/api/plugins/browser-tools/find-and-open-dm
+      GAPO_WORK_URL: ${GAPO_WORK_URL:-https://www.gapowork.vn}
+      BROWSER_HEADLESS: ${BROWSER_HEADLESS:-1}
+      BROWSER_MAX_DMS_PER_HOUR: ${BROWSER_MAX_DMS_PER_HOUR:-30}
+      AGENT_WEBHOOK_URL: http://localhost:18789/api/plugins/bb-pm/agent/run
+      AGENT_WEBHOOK_TIMEOUT_MS: ${AGENT_WEBHOOK_TIMEOUT_MS:-320000}
+      BB_PM_PROMPT_VERSION: ${BB_PM_PROMPT_VERSION:-v2}
+      REDIS_URL: redis://bb_pm_redis:6379
+      CRON_TZ: ${CRON_TZ:-Asia/Ho_Chi_Minh}
+      CRON_DAILY_DIGEST: ${CRON_DAILY_DIGEST:-0 8 * * *}
+      CRON_DAILY_DIGEST_TARGET: ${CRON_DAILY_DIGEST_TARGET:-}
+      CRON_WEEKLY_HYGIENE: ${CRON_WEEKLY_HYGIENE:-0 9 * * MON}
+      CRON_WEEKLY_HYGIENE_TARGET: ${CRON_WEEKLY_HYGIENE_TARGET:-}
+      CRON_CHECKIN_ENABLED: ${CRON_CHECKIN_ENABLED:-false}
+      CRON_NOON_CHECKIN: ${CRON_NOON_CHECKIN:-50 11 * * 1-5}
+      CRON_EOD_CHECKIN: ${CRON_EOD_CHECKIN:-50 17 * * 1-5}
+      CRON_MISSING_CHECKIN_FOLLOWUP: ${CRON_MISSING_CHECKIN_FOLLOWUP:-0 18 * * 1-5}
+      ADMIN_ALERT_TARGET: ${ADMIN_ALERT_TARGET:-}
+    ports:
+      - "${OPENCLAW_PORT:-18789}:18789"
+    depends_on:
+      bb_pm_api:
+        condition: service_started
+      bb_pm_redis:
+        condition: service_healthy
+    volumes:
+      - openclaw_home:/root/.openclaw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - pm_bb_pm_net
 
 volumes:
-  postgres_data:
-  opensearch-data:
+  bb_pm_pgdata:
+  bb_pm_redis_data:
+  openclaw_home:
 
 networks:
-  pm_network:
+  pm_bb_pm_net:
     driver: bridge
-  

@@ -21,7 +21,7 @@ BB-PM is the source of truth for project operations:
 - API: Fastify backend with business rules, RBAC, validation, and rollups.
 - Database: PostgreSQL through Prisma.
 - Agent layer: `bb-pm-tools` OpenClaw plugin calls BB-PM APIs with `X-Agent-Token`.
-- Channels: adapters such as `gapo-work` only receive/send messages; they do not own PM logic.
+- Channels: adapters such as `gapo-agent` only receive/send messages; they do not own PM logic.
 
 Primary actors:
 

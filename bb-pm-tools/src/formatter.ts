@@ -27,7 +27,7 @@ const FORMATTER_ENABLED = (process.env.BB_PM_FORMATTER_ENABLED ?? "true").toLowe
 // tầng LLM rewrite có thể hallucinate (Gemini-2.5-flash từng bịa "đã tạo tài
 // khoản"). Set false để skip Tier 3, vẫn giữ Tier 1 (template) + leak strip +
 // redact (rẻ, không gọi LLM).
-const FORMATTER_LLM_REWRITE = (process.env.BB_PM_FORMATTER_LLM_REWRITE ?? "true").toLowerCase() === "true";
+const FORMATTER_LLM_REWRITE = (process.env.BB_PM_FORMATTER_LLM_REWRITE ?? "false").toLowerCase() === "true";
 const FORMATTER_TIMEOUT_MS = Number(process.env.BB_PM_FORMATTER_TIMEOUT_MS ?? 30_000);
 const FORMATTER_MAX_TOKENS = Number(process.env.BB_PM_FORMATTER_MAX_TOKENS ?? 300);
 
@@ -234,7 +234,7 @@ export function shouldSkipFormatter(raw: string): boolean {
   const lower = trimmed.toLowerCase();
   // Có markdown markers chưa strip → cần formatter (mặc dù strip layer cũng xử
   // lý được, formatter giúp restructure câu)
-  if (/\*\*|__|```|^#{1,6}\s/m.test(trimmed)) return false;
+  if (/\*\*|__|```|`[^`\n]+`|^#{1,6}\s/m.test(trimmed)) return false;
   // Có JSON-like
   if (/^[\[{]/.test(trimmed) || /\}\s*$/.test(trimmed)) return false;
   // Có DB-leak tokens

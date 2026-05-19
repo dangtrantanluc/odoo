@@ -23,7 +23,7 @@ const TABS = [
   { id: "overview", label: "Tổng quan" },
   { id: "tasks", label: "Tasks" },
   { id: "milestones", label: "Milestones" },
-  { id: "backlogs", label: "Backlogs" },
+  { id: "backlogs", label: "Nhật ký công việc" },
   { id: "scope", label: "Scope" },
   { id: "members", label: "Thành viên" },
 ] as const;
@@ -117,7 +117,7 @@ function OverviewTab({ project: p }: { project: any }) {
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-4">
         <Kpi label="Tasks" value={p._count.tasks} />
-        <Kpi label="Backlogs" value={p._count.backlogs} />
+        <Kpi label="Worklogs" value={p._count.backlogs} />
         <Kpi label="Thành viên" value={p._count.members} />
         <Kpi label="Milestones" value={p._count.milestones} />
       </div>

@@ -15,6 +15,10 @@ import { notify, notifyMany, findCompanyAdmins } from "../../services/notify.js"
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const taskIdParam = z.object({ taskId: z.coerce.number().int().positive() });
+const projectIdParam = z.object({ projectId: z.coerce.number().int().positive() });
+const projectBacklogCreateSchema = backlogCreateSchema.extend({
+  taskId: z.number().int().positive().optional(),
+});
 
 const backlogsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -124,6 +128,53 @@ const backlogsRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ data: backlog });
   });
 
+  // ── CREATE under project (task optional) ─────────
+  app.post("/by-project/:projectId", {
+    schema: { params: projectIdParam, body: projectBacklogCreateSchema },
+  }, async (req, reply) => {
+    if (req.user.role === "VIEWER" && !req.user.isSuperAdmin) {
+      return reply.code(403).send({ error: { code: "FORBIDDEN" } });
+    }
+    const { projectId } = req.params as any;
+    const body = req.body as z.infer<typeof projectBacklogCreateSchema>;
+    const project = await app.prisma.project.findFirst({
+      where: req.user.isSuperAdmin ? { id: projectId } : { id: projectId, companyId: req.user.companyId },
+    });
+    if (!project) return reply.code(404).send({ error: { code: "PROJECT_NOT_FOUND" } });
+    const task = body.taskId
+      ? await app.prisma.task.findFirst({ where: { id: body.taskId, projectId } })
+      : null;
+    if (body.taskId && !task) return reply.code(404).send({ error: { code: "TASK_NOT_FOUND" } });
+    const workDate = new Date(body.workDate);
+    const rate = await app.prisma.memberRate.findFirst({
+      where: {
+        member: { projectId, userId: req.user.id },
+        effectiveFrom: { lte: workDate },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: workDate } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    const costPerHour = rate?.costPerHour ?? null;
+    const totalCost = costPerHour ? Number(costPerHour) * Number(body.hours) : null;
+    const backlog = await app.prisma.backlog.create({
+      data: {
+        workDate,
+        hours: body.hours,
+        description: body.description,
+        status: "PENDING",
+        taskId: task?.id ?? null,
+        projectId,
+        companyId: project.companyId,
+        userId: req.user.id,
+        currencyId: rate?.currencyId ?? task?.currencyId ?? project.currencyId,
+        costPerHourSnapshot: costPerHour,
+        totalCostSnapshot: totalCost as any,
+      },
+    });
+    await app.prisma.project.update({ where: { id: projectId }, data: { backlogCount: { increment: 1 } } });
+    return reply.code(201).send({ data: backlog });
+  });
+
   // ── UPDATE (owner + PENDING only, or admin) ───────
   app.patch("/:id", { schema: { params: idParam, body: backlogUpdateSchema } }, async (req, reply) => {
     const { id } = req.params as any;
@@ -170,7 +221,7 @@ const backlogsRoutes: FastifyPluginAsync = async (app) => {
     // If it was APPROVED and hours changed, recompute totals
     if (existing.status === "APPROVED" && body.hours !== undefined) {
       await app.prisma.$transaction(async (tx) => {
-        await recomputeTaskTotals(tx, existing.taskId);
+        if (existing.taskId) await recomputeTaskTotals(tx, existing.taskId);
         if (existing.projectId) await recomputeProjectTotals(tx, existing.projectId);
       });
     }
@@ -198,7 +249,7 @@ const backlogsRoutes: FastifyPluginAsync = async (app) => {
     }
     if (wasApproved) {
       await app.prisma.$transaction(async (tx) => {
-        await recomputeTaskTotals(tx, existing.taskId);
+        if (existing.taskId) await recomputeTaskTotals(tx, existing.taskId);
         if (existing.projectId) await recomputeProjectTotals(tx, existing.projectId);
       });
     }
@@ -221,7 +272,7 @@ const backlogsRoutes: FastifyPluginAsync = async (app) => {
         where: { id },
         data: { status: "APPROVED", approverId: req.user.id, approvedAt: new Date(), rejectedReason: null },
       });
-      await recomputeTaskTotals(tx, existing.taskId);
+      if (existing.taskId) await recomputeTaskTotals(tx, existing.taskId);
       if (existing.projectId) await recomputeProjectTotals(tx, existing.projectId);
       await notify(tx, {
         userId: existing.userId,
@@ -254,7 +305,7 @@ const backlogsRoutes: FastifyPluginAsync = async (app) => {
         data: { status: "REJECTED", approverId: req.user.id, approvedAt: new Date(), rejectedReason: reason },
       });
       if (wasApproved) {
-        await recomputeTaskTotals(tx, existing.taskId);
+        if (existing.taskId) await recomputeTaskTotals(tx, existing.taskId);
         if (existing.projectId) await recomputeProjectTotals(tx, existing.projectId);
       }
       await notify(tx, {
@@ -287,7 +338,7 @@ const backlogsRoutes: FastifyPluginAsync = async (app) => {
         data: { status: "PENDING", approverId: null, approvedAt: null, rejectedReason: null },
       });
       if (wasApproved) {
-        await recomputeTaskTotals(tx, existing.taskId);
+        if (existing.taskId) await recomputeTaskTotals(tx, existing.taskId);
         if (existing.projectId) await recomputeProjectTotals(tx, existing.projectId);
       }
       return u;

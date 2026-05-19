@@ -22,6 +22,7 @@
 16. [Maintenance Notes](#16-maintenance-notes)
 17. [bb-pm-tools Deep Dive](#17-bb-pm-tools-deep-dive)
 18. [OpenClaw Integration Deep Dive](#18-openclaw-integration-deep-dive)
+19. [Daily Check-in Deep Dive](#19-daily-check-in-deep-dive)
 
 ---
 
@@ -1452,7 +1453,7 @@ Nói ngắn gọn:
 
 - `bb-pm` là source of truth và REST API.
 - `bb-pm-tools` là brain/runtime của agent: nhận câu hỏi, gọi LLM, chọn tool, gọi API, audit, format reply, schedule workflow.
-- `gapo-work` hoặc channel adapter khác chỉ là lớp nhận/gửi message.
+- `gapo-agent` hoặc channel adapter khác chỉ là lớp nhận/gửi message.
 - OpenClaw là plugin host và HTTP gateway để các plugin giao tiếp.
 
 WHY tách `bb-pm-tools` khỏi `bb-pm`:
@@ -1468,7 +1469,7 @@ WHY tách `bb-pm-tools` khỏi `bb-pm`:
 /home/bbsw/pm/
 ├── bb-pm/              # Core React + Fastify + Prisma app
 ├── bb-pm-tools/        # OpenClaw plugin: PM agent orchestrator
-└── openclaw/openclaw/  # OpenClaw gateway/plugin host + gapo-work plugin
+└── openclaw/openclaw/  # OpenClaw gateway/plugin host + gapo-agent plugin
 ```
 
 ## 17.3 Package overview
@@ -1515,7 +1516,7 @@ bb-pm-tools/src/
 ├── config.ts             # Env parsing
 ├── pre-classifier.ts     # Fast-path intent classifier
 ├── formatter.ts          # Chat reply formatter/cleanup
-├── channel-out.ts        # Outbound to gapo-work/browser-tools
+├── channel-out.ts        # Outbound to gapo-agent/browser-tools
 ├── memory.ts             # Recall + summarize conversation memory
 ├── scheduler.ts          # Cron, DB automation sync, audit cleanup
 ├── workflows/registry.ts # Named workflow registry
@@ -1623,18 +1624,25 @@ flowchart TD
   D --> E[Rate limit by correlationId or IP]
   E --> F{Duplicate chat message?}
   F -- Yes --> G[Return empty reply silent=true]
-  F -- No --> H{Fast-path possible?}
-  H -- Yes --> I[Execute fast-path without LLM slot]
+  F -- No --> H{Check-in or action session?}
+  H -- Yes --> I[Execute deterministic state machine]
   I --> J[Return reply]
-  H -- No --> K[Acquire concurrency slot]
-  K --> L[runAgent]
-  L --> M[Format response]
-  M --> N[Strip markdown for Gapo]
-  N --> O[Return { reply, requestId }]
+  H -- No --> K{Fast-path possible?}
+  K -- Yes --> L[Execute fast-path without LLM slot]
+  L --> J
+  K -- No --> M{Read query?}
+  M -- Yes --> N[Text-to-SQL / report.query]
+  N --> J
+  M -- No --> O[Acquire concurrency slot]
+  O --> P[runAgent ReAct]
+  P --> Q[Format response]
+  Q --> R[Strip markdown for Gapo]
+  R --> J
 ```
 
 Important operational decisions:
 
+- Check-in/action sessions run before generic fast-path so follow-up turns like "ok" or a bare project name stay in the active workflow.
 - Fast-path runs before concurrency slot because it does not need LLM.
 - Duplicate chat messages return empty reply so channel watcher does not spam user.
 - Concurrency limiter protects slow/self-hosted LLM from burst overload.
@@ -1886,16 +1894,16 @@ WHY:
 
 ## 17.18 Outbound channel strategy
 
-`bb-pm-tools` should not hold direct Gapo credentials for normal outbound. It sends through `gapo-work`:
+`bb-pm-tools` should not hold direct Gapo credentials for normal outbound. It sends through `gapo-agent`:
 
 ```text
-bb-pm-tools -> POST /api/plugins/gapo-work/send -> Gapo API
+bb-pm-tools -> POST /api/plugins/gapo-agent/send -> Gapo API
 ```
 
 Config:
 
 ```env
-GAPO_SEND_URL=http://localhost:18789/api/plugins/gapo-work/send
+GAPO_SEND_URL=http://localhost:18789/api/plugins/gapo-agent/send
 GAPO_SEND_TOKEN=<shared secret>
 ```
 
@@ -1920,8 +1928,8 @@ BROWSER_TOOLS_TOKEN=<token>
 | `LLM_MODEL` | No | Default provider model |
 | `GEMINI_API_KEY` | If provider gemini | Gemini auth |
 | `OPENROUTER_API_KEY` | If provider openrouter | OpenRouter auth |
-| `GAPO_SEND_URL` | For outbound | gapo-work send endpoint |
-| `GAPO_SEND_TOKEN` | For outbound/cron | Shared secret to gapo-work |
+| `GAPO_SEND_URL` | For outbound | gapo-agent send endpoint |
+| `GAPO_SEND_TOKEN` | For outbound/cron | Shared secret to gapo-agent |
 | `REDIS_URL` | Optional | Distributed rate/cooldown |
 | `FOLLOW_UP_COOLDOWN_SEC` | Optional | Follow-up cooldown, default 24h |
 | `AGENT_RUN_MAX_PER_WINDOW` | Optional | Rate limit max |
@@ -1977,7 +1985,7 @@ curl -s http://localhost:18789/api/plugins/bb-pm/health
 | `Missing env: BB_PM_AGENT_TOKEN` | Plugin cannot auth to BB-PM | `.env`, `config.ts`, BB-PM `AGENT_API_TOKEN` |
 | LLM returns text but no tools execute | Model server not emitting OpenAI `tool_calls` | Curl `/chat/completions` with tools |
 | Slow replies | LLM saturated, no fast-path, queue full | `/agent/metrics`, logs, `AGENT_MAX_STEPS` |
-| Duplicate replies | Channel retry/dedup mismatch | `conversationId`, `dedup.ts`, gapo-work ack-fast |
+| Duplicate replies | Channel retry/dedup mismatch | `conversationId`, `dedup.ts`, gapo-agent ack-fast |
 | No scheduled digest | Missing target/token or invalid cron | `CRON_*`, `GAPO_SEND_TOKEN`, scheduler logs |
 | Follow-up spam | Redis unavailable or cooldown not shared | `REDIS_URL`, `FOLLOW_UP_COOLDOWN_SEC` |
 | Agent knows no caller | Missing `ChannelIdentity` mapping | BB-PM `/api/v1/agent/user-by-channel` |
@@ -1993,7 +2001,7 @@ OpenClaw là local-first AI gateway/plugin host. Trong kiến trúc BB-PM, OpenC
 Vai trò chính:
 
 - Load plugin `bb-pm-tools`.
-- Load channel plugin như `gapo-work`.
+- Load channel plugin như `gapo-agent`.
 - Expose plugin HTTP routes dưới `/api/plugins/...`.
 - Cung cấp gateway process chạy lâu dài.
 - Cho phép các channel adapter và orchestrator giao tiếp trong cùng gateway.
@@ -2002,12 +2010,12 @@ Vai trò chính:
 
 ```mermaid
 flowchart LR
-  GW[OpenClaw Gateway] --> GP[gapo-work plugin]
+  GW[OpenClaw Gateway] --> GP[gapo-agent plugin]
   GW --> BP[bb-pm-tools plugin]
   GP -->|POST /agent/run| BP
   BP -->|X-Agent-Token| API[bb-pm API]
   API --> DB[(PostgreSQL)]
-  BP -->|POST /gapo-work/send| GP
+  BP -->|POST /gapo-agent/send| GP
   GP --> Gapo[Gapo Work API]
 ```
 
@@ -2017,12 +2025,12 @@ Responsibility split:
 |---|---|---|
 | `bb-pm` | PM data, business rules, RBAC, migrations | LLM prompts, channel webhooks |
 | `bb-pm-tools` | Orchestration, tools, LLM, workflows, memory, audit | Raw Gapo payload parsing, browser UI |
-| `gapo-work` | Gapo webhook parse/send | PM logic, DB query, intent routing |
+| `gapo-agent` | Gapo webhook parse/send | PM logic, DB query, intent routing |
 | OpenClaw gateway | Plugin loading/routing/runtime | BB-PM business domain |
 
 ## 18.3 OpenClaw plugin contract used here
 
-Both `bb-pm-tools` and `gapo-work` expose:
+Both `bb-pm-tools` and `gapo-agent` expose:
 
 ```ts
 export function register(api: any) {
@@ -2042,12 +2050,12 @@ WHY `registerHttpRoute`:
 - Plugin handler works with raw Node `IncomingMessage` / `ServerResponse`.
 - The same gateway can host multiple plugins without each plugin running its own HTTP server.
 
-## 18.4 gapo-work plugin
+## 18.4 gapo-agent plugin
 
 Location:
 
 ```text
-openclaw/openclaw/plugins/gapo-work/
+gapo-agent/
 ```
 
 Files:
@@ -2065,8 +2073,8 @@ Registered routes:
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/plugins/gapo-work/webhook` | POST | Gapo inbound webhook |
-| `/api/plugins/gapo-work/send` | POST | Outbound send used by bb-pm-tools |
+| `/api/plugins/gapo-agent/webhook` | POST | Gapo inbound webhook |
+| `/api/plugins/gapo-agent/send` | POST | Outbound send used by bb-pm-tools |
 
 ## 18.5 Inbound Gapo flow
 
@@ -2074,11 +2082,11 @@ Registered routes:
 sequenceDiagram
   participant Gapo as Gapo Work
   participant GW as OpenClaw Gateway
-  participant GP as gapo-work
+  participant GP as gapo-agent
   participant BP as bb-pm-tools
   participant API as bb-pm API
 
-  Gapo->>GW: POST /api/plugins/gapo-work/webhook
+  Gapo->>GW: POST /api/plugins/gapo-agent/webhook
   GW->>GP: webhookHandler(req,res)
   GP-->>Gapo: 200 { ok: true } fast ack
   GP->>GP: parse text, senderName, conversationId
@@ -2091,11 +2099,11 @@ sequenceDiagram
 
 Important detail:
 
-`gapo-work` acknowledges Gapo before calling the orchestrator. This prevents Gapo from retrying webhook delivery while LLM is still processing.
+`gapo-agent` acknowledges Gapo before calling the orchestrator. This prevents Gapo from retrying webhook delivery while LLM is still processing.
 
 ## 18.6 Payload normalization
 
-`gapo-work/webhook.ts` supports real Gapo and legacy test payloads.
+`gapo-agent/webhook.ts` supports real Gapo and legacy test payloads.
 
 It extracts:
 
@@ -2131,7 +2139,7 @@ Forwarded request:
 `bb-pm-tools` sends outbound messages through:
 
 ```http
-POST /api/plugins/gapo-work/send
+POST /api/plugins/gapo-agent/send
 X-Plugin-Token: <GAPO_SEND_TOKEN>
 ```
 
@@ -2144,19 +2152,19 @@ Body:
 }
 ```
 
-WHY route outbound through `gapo-work`:
+WHY route outbound through `gapo-agent`:
 
 - Centralizes Gapo API token.
 - Keeps channel credentials out of `bb-pm-tools`.
 - Lets scheduler/follow-up use same send path as reply flow.
 - Makes future channel replacement easier.
 
-## 18.8 gapo-work config
+## 18.8 gapo-agent config
 
 Preferred file:
 
 ```text
-~/.openclaw/plugins/gapo-work/config.json
+~/.openclaw/plugins/gapo-agent/config.json
 ```
 
 Example:
@@ -2196,7 +2204,7 @@ flowchart TD
   end
 
   subgraph OpenClaw[OpenClaw Gateway :18789]
-    GP[gapo-work plugin]
+    GP[gapo-agent plugin]
     BP[bb-pm-tools plugin]
   end
 
@@ -2217,7 +2225,7 @@ flowchart TD
   BP -->|X-Agent-Token| API
   API --> DB
   BP -. cooldown/rate .-> REDIS
-  BP -->|/gapo-work/send| GP
+  BP -->|/gapo-agent/send| GP
   GP -->|reply| U
   WEB -->|Bearer JWT| API
 ```
@@ -2241,7 +2249,7 @@ flowchart TD
    LLM_PROVIDER=default
    LLM_BASE_URL=http://localhost:8000/v1
    LLM_MODEL=<model-with-tool-calling>
-   GAPO_SEND_URL=http://localhost:18789/api/plugins/gapo-work/send
+   GAPO_SEND_URL=http://localhost:18789/api/plugins/gapo-agent/send
    GAPO_SEND_TOKEN=<shared-secret>
    ```
 
@@ -2253,7 +2261,7 @@ flowchart TD
    pnpm build
    ```
 
-6. Configure `gapo-work` in OpenClaw:
+6. Configure `gapo-agent` in OpenClaw:
 
    ```json
    {
@@ -2274,7 +2282,7 @@ flowchart TD
 9. Point Gapo outgoing webhook to:
 
    ```text
-   https://<public-domain>/api/plugins/gapo-work/webhook
+   https://<public-domain>/api/plugins/gapo-agent/webhook
    ```
 
 10. Test message in Gapo:
@@ -2290,8 +2298,8 @@ There are three separate secrets. Do not confuse them.
 | Token | Used between | Header/env |
 |---|---|---|
 | BB-PM agent token | `bb-pm-tools` -> `bb-pm API` | `X-Agent-Token`, `BB_PM_AGENT_TOKEN`, API `AGENT_API_TOKEN` |
-| Gapo bot token | `gapo-work` -> Gapo API | `GAPO_BOT_TOKEN` |
-| Plugin send token | `bb-pm-tools` -> `gapo-work/send` | `X-Plugin-Token`, `GAPO_SEND_TOKEN` |
+| Gapo bot token | `gapo-agent` -> Gapo API | `GAPO_BOT_TOKEN` |
+| Plugin send token | `bb-pm-tools` -> `gapo-agent/send` | `X-Plugin-Token`, `GAPO_SEND_TOKEN` |
 
 WHY separate:
 
@@ -2319,7 +2327,7 @@ correlationId = gapo-123456-1715000000000
 Where to inspect:
 
 - OpenClaw gateway logs.
-- `gapo-work` logs: inbound and sendReply.
+- `gapo-agent` logs: inbound and sendReply.
 - `bb-pm-tools` logs: fast-path, slot, LLM, tool calls.
 - BB-PM DB: `agent_audit_log`, `agent_memory`, `agent_follow_ups`.
 - `GET /api/plugins/bb-pm/agent/metrics`.
@@ -2329,21 +2337,105 @@ Where to inspect:
 
 | Symptom | Layer | Cause | Fix |
 |---|---|---|---|
-| Gapo webhook retries repeatedly | `gapo-work` | Handler not acking fast or route unreachable | Check public URL, gateway bind, logs |
-| Gapo receives generic error reply | `gapo-work` -> `bb-pm-tools` | Orchestrator timeout/fail | Check `ORCHESTRATOR_URL`, `/agent/health`, LLM |
+| Gapo webhook retries repeatedly | `gapo-agent` | Handler not acking fast or route unreachable | Check public URL, gateway bind, logs |
+| Gapo receives generic error reply | `gapo-agent` -> `bb-pm-tools` | Orchestrator timeout/fail | Check `ORCHESTRATOR_URL`, `/agent/health`, LLM |
 | `/agent/run` returns 503 overloaded | `bb-pm-tools` | Concurrency queue full | Check LLM latency, add fast-path, tune slots |
 | Tool calls fail 401 | `bb-pm-tools` -> `bb-pm` | Agent token mismatch | Sync `BB_PM_AGENT_TOKEN` and `AGENT_API_TOKEN` |
 | Agent cannot answer "task của tôi" | identity mapping | No `ChannelIdentity` for Gapo cid | Create/import mapping |
-| Scheduled digest not sent | outbound | Missing `GAPO_SEND_TOKEN` or bad target | Test `/gapo-work/send` |
+| Scheduled digest not sent | outbound | Missing `GAPO_SEND_TOKEN` or bad target | Test `/gapo-agent/send` |
 | Reply has markdown artifacts | formatter/channel | LLM returned markdown | Check formatter, `stripMarkdownForGapo` |
 | No tool calls from LLM | LLM server | No OpenAI function-calling support | Verify `tool_calls` with curl |
 
 ## 18.14 Maintenance rules
 
-- Keep PM business rules in `bb-pm`, not in `gapo-work`.
-- Keep channel payload parsing in `gapo-work`, not in `bb-pm-tools`.
+- Keep PM business rules in `bb-pm`, not in `gapo-agent`.
+- Keep channel payload parsing in `gapo-agent`, not in `bb-pm-tools`.
 - Keep prompt/tool orchestration in `bb-pm-tools`, not in `bb-pm` API.
 - Add new PM capability as API endpoint first, then expose as tool.
 - For every new mutating tool, define confirmation rules in prompt/eval.
 - For every scheduled workflow, prefer deterministic workflow functions over LLM prompts.
 - For every new channel, preserve the `/agent/run` contract and map its thread/user ID into `conversationId`.
+
+
+# 19. Daily Check-in Deep Dive
+
+## 19.1 Mục tiêu UX
+
+Daily check-in cần đủ nhanh để user không ngại dùng mỗi ngày. Vì vậy `/checkin` không hiển thị toàn bộ project đang mở; nó chỉ đưa ra 3 project gần đây rồi cho phép nhập tự do nếu user đang làm project khác.
+
+```text
+Hôm nay bạn làm project nào?
+
+Gần đây:
+1. AI PM Agent
+2. Logistics Dashboard
+3. CRM Internal
+
+Hoặc nhập tên project khác.
+```
+
+Cách chọn hợp lệ:
+
+- quick reply;
+- gõ số thứ tự;
+- gõ tên project bất kỳ còn open task của user.
+
+## 19.2 Luồng xử lý
+
+```text
+/checkin hoặc reminder
+  -> start session
+  -> AWAITING_PROJECT
+  -> user chọn project
+  -> AWAITING_UPDATE
+  -> user gửi tiến độ
+     -> lưu worklog trực tiếp theo project
+     -> nếu parser nhận diện task rất rõ: gắn task ngầm như enrichment
+  -> chọn task
+  -> tạo backlog GAPO_CHECKIN
+  -> COMPLETED
+```
+
+`bb-pm-tools/src/checkin.ts` xử lý turn hội thoại; `bb-pm API` giữ session và business rule. Parse update dùng LLM trước, regex fallback sau để không mất check-in khi LLM chập chờn.
+
+## 19.3 API contract
+
+| Endpoint | Ý nghĩa |
+| --- | --- |
+| `POST /api/v1/agent/checkin-sessions/start` | Mở/reset phiên |
+| `GET /api/v1/agent/checkin-sessions/current` | Lấy phiên hiện tại |
+| `PATCH /api/v1/agent/checkin-sessions/:id` | Cập nhật state/project/task |
+| `POST /api/v1/agent/checkin-sessions/:id/complete` | Đóng phiên |
+| `POST /api/v1/agent/checkins/import` | Tạo backlog `GAPO_CHECKIN` |
+| `GET /api/v1/agent/checkins/status` | Theo dõi ai đã check-in |
+| `GET /api/v1/agent/checkins/missing` | Tìm user còn thiếu check-in |
+| `GET /api/v1/agent/checkins/project-daily-summary` | Tổng hợp theo project trong ngày |
+
+## 19.4 Reminder và cron
+
+Workflow hiện tại:
+
+- `noon_checkin_reminder`
+- `eod_checkin_reminder`
+- `missing_checkin_followup`
+
+Biến môi trường:
+
+- `CRON_CHECKIN_ENABLED`
+- `CRON_NOON_CHECKIN`
+- `CRON_EOD_CHECKIN`
+- `CRON_MISSING_CHECKIN_FOLLOWUP`
+
+Reminder chỉ gửi khi user còn thiếu check-in, có Gapo identity, không có active session và có project open để chọn.
+
+## 19.5 Failure modes và quan sát
+
+| Hiện tượng | Cần kiểm tra |
+| --- | --- |
+| Gửi `/checkin` nhưng không có prompt | caller mapping, open task, log `checkin:no_project` |
+| Reminder không tới | cron flag, target Gapo identity, active session |
+| Bot hỏi task tiếp | không còn là happy path mặc định; nếu xuất hiện cần kiểm tra runtime có đang chạy bản cũ không |
+| Parse update kém | telemetry `parseFallback`, LLM health |
+| Report thiếu người | endpoint `/checkins/missing`, backlog nguồn `GAPO_CHECKIN` |
+
+Metrics quan trọng từ `/api/plugins/bb-pm/agent/metrics`: `sessionsStarted`, `projectsSelected`, `completed`, `parseSuccess`, `parseFallback`, `remindersSent`, `remindersSkipped`.

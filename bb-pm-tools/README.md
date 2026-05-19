@@ -1,166 +1,151 @@
-# @openclaw/bb-pm-tools — Sprint 1 + 2
+# @openclaw/bb-pm-tools
 
-OpenClaw plugin: PM agent over Gapo Work, self-hosted LLM, bb-pm API backend.
+`bb-pm-tools` là OpenClaw plugin đóng vai trò **PM Agent orchestrator**. Plugin nhận turn chat đã normalize từ channel adapter, chạy fast-path hoặc LLM, gọi `bb-pm API`, audit tool call, format reply và điều phối workflow định kỳ.
 
-**Sprint 1** — reactive observer:
-- 1 tool: `list_overdue_tasks`
-- LLM orchestrator (OpenAI-compatible, Gemma 4)
-- Gapo inbound webhook + outbound sender
+Production path:
 
-**Sprint 2** — proactive observer (Level 1 capability):
-- 3 more tools: `list_stale_tasks`, `check_data_hygiene`, `generate_daily_digest`
-- Cron scheduler (Flow 1: daily digest @ 08:00, Flow 7: weekly hygiene Mon 09:00)
-- Every tool call is audited to `agent_audit_log` via `POST /api/v1/agent/audit`
-
-## Architecture (post Phase 1 refactor)
-
-Channel plugins are now separate. This plugin is the **orchestrator only** —
-it exposes a channel-agnostic HTTP endpoint `/api/plugins/bb-pm/agent/run`
-that any channel adapter can POST into.
-
-```
-Gapo Work ──webhook──▶ gapo-work plugin ──HTTP /agent/run──▶ bb-pm-tools
-   ▲                                                              │
-   │                                                              │ tool call
-   │                                                              ▼
-   └──────────── reply ◀── gapo-work ◀──── { reply } ─────── bb-pm API ──▶ Postgres
-                                                                  ▲
-                                            LLM (self-hosted Gemma 4) ─┘
+```text
+GapoWork -> gapo-agent -> bb-pm-tools -> bb-pm API -> PostgreSQL
 ```
 
-Outbound for the cron scheduler still goes directly from this plugin to the
-Gapo API (Phase 2 will move that into gapo-work too).
+## 1. Trách nhiệm
 
-## ⚠️ Gemma + tool-calling
+- Nhận request channel-agnostic tại `POST /api/plugins/bb-pm/agent/run`.
+- Xử lý slash command và fast-path trước khi dùng LLM.
+- Điều phối LLM OpenAI-compatible; mặc định hiện tại là Qwen self-hosted.
+- Gọi tool qua HTTP client tới `bb-pm API`; không chạm DB trực tiếp.
+- Chạy workflow cron như digest, hygiene, check-in reminder.
+- Gửi outbound qua `gapo-agent /send`; plugin này không giữ credential Gapo.
 
-Gemma does NOT speak OpenAI function-calling natively. You must serve it through
-a stack that parses Gemma's tool-call format into the OpenAI `tool_calls` shape:
+## 2. Check-in flow hiện tại
 
-- **vLLM**: `--enable-auto-tool-choice --tool-call-parser <parser>` (pick the
-  parser that matches your Gemma variant — check vLLM docs)
-- **llama.cpp server**: use a build with `--chat-template gemma` and a tool
-  adapter (e.g. llama-cpp-agent)
-- **Ollama**: tool-calling support varies per model file; verify with
-  `curl $LLM_BASE_URL/chat/completions` returning `tool_calls`
+Khi user gửi `/checkin` hoặc nhận reminder, bot mở session và hỏi:
 
-Quick verification:
+```text
+Hôm nay bạn làm project nào?
+
+Gần đây:
+1. AI PM Agent
+2. Logistics Dashboard
+3. CRM Internal
+
+Hoặc nhập tên project khác.
+```
+
+Chỉ 3 project gần đây được hiển thị để tránh danh sách dài; user vẫn có thể:
+
+- bấm quick reply;
+- nhập số `1`, `2`, `3`;
+- hoặc gõ tên project khác không nằm trong 3 lựa chọn.
+
+State machine:
+
+```text
+AWAITING_PROJECT -> AWAITING_UPDATE -> COMPLETED
+```
+
+Sau khi user gửi update, agent parse nội dung và tạo worklog `GAPO_CHECKIN` trực tiếp cho project. Nếu project có task open, task vẫn là lớp gắn thêm tùy chọn; nếu không có task, check-in vẫn hoàn tất bình thường. Nếu LLM parse lỗi, code dùng regex fallback để giữ flow không bị gãy.
+
+## 3. Slash command chính
+
+- `/checkin` — bắt đầu cập nhật tiến độ hôm nay.
+- `/project` — mở lại bước chọn project cho phiên check-in.
+- `/report` — báo cáo hôm nay.
+- `/blocker` — hướng dẫn báo blocker.
+- `/help`, `/digest`, `/weekly`, `/mytasks`, `/overdue`, `/blocked`, `/stale`, `/projects`, `/role`, `/automations`.
+
+## 4. Workflow định kỳ
+
+| Workflow | Mục đích |
+| --- | --- |
+| `daily_digest` | Gửi digest ngày |
+| `weekly_report` | Gửi báo cáo tuần |
+| `hygiene_check` | Kiểm tra hygiene dữ liệu |
+| `role_based_digest` | Digest theo role |
+| `noon_checkin_reminder` | Nhắc check-in giữa ngày |
+| `eod_checkin_reminder` | Nhắc check-in cuối ngày |
+| `missing_checkin_followup` | Follow-up user còn thiếu check-in |
+
+Reminder check-in chỉ gửi cho user còn thiếu check-in, có Gapo identity, không có session đang mở, và có project open để chọn.
+
+## 5. Runtime contracts
+
+### Endpoint
+
+```text
+POST /api/plugins/bb-pm/agent/run
+GET  /api/plugins/bb-pm/health
+GET  /api/plugins/bb-pm/agent/metrics
+```
+
+### Request tối thiểu
+
+```json
+{
+  "text": "/checkin",
+  "source": "chat",
+  "conversationId": "gapo:123",
+  "externalId": "gapo-user-id"
+}
+```
+
+### Response có quick reply
+
+```json
+{
+  "reply": "Hôm nay bạn làm project nào?...",
+  "channelReply": {
+    "type": "quick_replies",
+    "text": "Hôm nay bạn làm project nào?...",
+    "metadata": { "options": [] }
+  },
+  "fastPath": "checkin:start"
+}
+```
+
+## 6. Env quan trọng
+
+| Env | Vai trò |
+| --- | --- |
+| `BB_PM_API_URL` | Base URL của backend |
+| `BB_PM_AGENT_TOKEN` | Auth tới backend |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | LLM provider |
+| `GAPO_SEND_URL`, `GAPO_SEND_TOKEN` | Outbound tới `gapo-agent` |
+| `REDIS_URL` | Runtime support |
+| `CRON_CHECKIN_ENABLED` | Bật/tắt reminder check-in |
+| `CRON_NOON_CHECKIN`, `CRON_EOD_CHECKIN`, `CRON_MISSING_CHECKIN_FOLLOWUP` | Lịch cron |
+
+## 7. Test và debug
+
 ```bash
-curl $LLM_BASE_URL/chat/completions -H "Content-Type: application/json" -d '{
-  "model": "gemma-4",
-  "messages": [{"role":"user","content":"list overdue tasks"}],
-  "tools": [{"type":"function","function":{"name":"list_overdue_tasks","description":"x","parameters":{"type":"object","properties":{}}}}],
-  "tool_choice": "auto"
-}'
-```
-
-If the response contains `"tool_calls": [...]` → you're good.
-If not → your serving stack doesn't forward tool-calls. Fix the serving config
-before expecting the plugin to work.
-
-## Prerequisites — bb-pm API side
-
-1. Pull the bb-pm API changes from this sprint:
-   - `src/plugins/auth.ts` — accepts `X-Agent-Token` header
-   - `src/modules/tasks/routes.ts` — new `GET /tasks/overdue`
-   - `prisma/seed.ts` — creates `pm-agent@bluebolt.local` MANAGER user
-
-2. Set env on the API service:
-   ```
-   AGENT_API_TOKEN=<same hex string as plugin>
-   AGENT_USER_EMAIL=pm-agent@bluebolt.local   # optional override
-   ```
-
-3. Re-run seed so the agent user exists:
-   ```
-   pnpm --filter @bb-pm/api prisma db seed
-   ```
-
-## Setup
-
-```bash
-cd bb-pm/openclaw/bb-pm-tools
-cp .env.example .env
-# fill in BB_PM_AGENT_TOKEN, GAPO_BOT_TOKEN, LLM_BASE_URL
-pnpm install
+pnpm test
+pnpm typecheck
 pnpm build
+pnpm cli --workflow noon_checkin_reminder
+pnpm cli --workflow eod_checkin_reminder
+pnpm cli --workflow missing_checkin_followup
 ```
 
-## Quick smoke test (no OpenClaw host, no Gapo)
+Khi debug `/checkin`, kiểm tra theo thứ tự:
 
-```bash
-pnpm cli "task nào đang quá hạn?"        # Sprint 1 flow
-pnpm cli --digest                         # Sprint 2: daily digest
-pnpm cli --hygiene                        # Sprint 2: weekly hygiene
-pnpm cli --stale                          # Sprint 2: stale tasks
-```
+1. user có `channel_identity` Gapo hay chưa;
+2. user có tham gia project nào hoặc có task open được assign hay chưa;
+3. `CRON_CHECKIN_ENABLED` có bật đúng lúc cần reminder hay chưa;
+4. log `checkin:*` trong plugin;
+5. metrics `checkin.sessionsStarted`, `projectsSelected`, `completed`, `parseSuccess`, `parseFallback`.
 
-Expected: CLI prints a Vietnamese answer, e.g.
-> Có 3 task quá hạn: ...
+## 8. File map
 
-If you see `Missing env: BB_PM_AGENT_TOKEN` — set it in `.env`.
+Source mới đi theo feature-first layout; các file top-level cũ như `src/tools.ts` và `src/pre-classifier.ts` là shim tương thích mỏng để tránh phá import path cũ.
 
-## Running inside OpenClaw host
+- `src/routing/` — action router, read router, fast-path.
+- `src/checkin/` — check-in state machine.
+- `src/reporting/nl-to-sql/` — translator và knowledge retrieval.
+- `src/tools/catalog.ts` — tool catalog hiện tại.
+- `src/workflows/` — workflow registry và scheduler.
+- `src/agent/` — memory và prompt assets.
+- `src/infrastructure/` — bb-pm API, channel, LLM, Redis clients.
+- `src/shared/` — config, types, telemetry, template và text helpers.
+- `src/webhook.ts`, `src/orchestrator.ts` — HTTP entrypoint và ReAct path; đây là các boundary còn lại sẽ tiếp tục được tách dần khi có nhu cầu thực tế.
 
-The plugin registers a Fastify-style POST handler at
-`/api/plugins/bb-pm/agent/run` via the OpenClaw plugin host's `api.http.post`.
-Channel adapters (e.g. `gapo-work`) forward inbound messages to this path.
-
-Request body:
-```json
-{ "text": "task nào quá hạn?", "source": "chat", "correlationId": "gapo-abc-...." }
-```
-Response:
-```json
-{ "reply": "Có 3 task quá hạn: ..." }
-```
-
-To hook Gapo, install and enable the `gapo-work` plugin and point its
-`orchestrator.url` at `http://<openclaw-host>/api/plugins/bb-pm/agent/run`.
-
-## Testing the full loop
-
-1. In Gapo, send the bot: `[GAPO_USER: dat.le] task nào quá hạn?`
-2. Plugin → LLM chooses `list_overdue_tasks` → calls bb-pm API.
-3. Bot replies in Vietnamese with the overdue list.
-
-## Enabling cron (Sprint 2)
-
-The scheduler starts only for jobs where both `SCHEDULE` and `TARGET` are set.
-`TARGET` is the Gapo conversation id the bot posts into (typically the PM room).
-
-```
-CRON_DAILY_DIGEST=0 8 * * *
-CRON_DAILY_DIGEST_TARGET=<gapo-conv-id-for-pm-room>
-
-CRON_WEEKLY_HYGIENE=0 9 * * MON
-CRON_WEEKLY_HYGIENE_TARGET=<gapo-conv-id-for-pm-room>
-```
-
-To trigger manually without waiting: `pnpm cli --digest`.
-
-## Audit log
-
-Every tool call writes one row to `agent_audit_log` via `POST /api/v1/agent/audit`
-with:
-- `tool`, `argsJson`, summarized `resultJson` (counts only, not full lists)
-- `durationMs`, `errorMessage` (if failed)
-- `source` (`chat` | `cron` | `cli`)
-- `correlationId` (for cron: `<jobName>-<timestamp>`)
-
-Inspect recent entries:
-```
-curl -H "X-Agent-Token: $TOKEN" "http://localhost:4000/api/v1/agent/audit?limit=20"
-```
-
-## File map
-
-- `src/config.ts` — env parsing (bb-pm, LLM, Gapo, cron)
-- `src/api-client.ts` — typed bb-pm HTTP client
-- `src/tools.ts` — tool catalog (4 tools: overdue, stale, hygiene, digest)
-- `src/llm.ts` — OpenAI-compatible chat client
-- `src/orchestrator.ts` — ReAct loop + audit wrapper
-- `src/scheduler.ts` — node-cron jobs
-- `src/gapo-channel.ts` — parse/send Gapo messages
-- `src/webhook.ts` — HTTP handler
-- `src/index.ts` — plugin entry (`register(api)`)
-- `src/cli.ts` — standalone tester (supports `--digest`, `--hygiene`, `--stale`, `--overdue`)
+Đọc tiếp: [../README.md](../README.md), [../RUNBOOK.md](../RUNBOOK.md), [../ARCHITECTURE.md](../ARCHITECTURE.md).

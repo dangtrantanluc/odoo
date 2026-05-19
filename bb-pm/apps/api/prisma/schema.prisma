@@ -68,6 +68,7 @@ model User {
   assignedScopes    Scope[]         @relation("ScopeAssignee")
   gapoMap           GapoUserMap?
   channelIdentities ChannelIdentity[]
+  checkinSession    CheckinSession?
   refreshTokens     RefreshToken[]
   notifications     Notification[]
   agentFollowUps    AgentFollowUp[]
@@ -267,17 +268,23 @@ enum BacklogStatus {
   REJECTED
 }
 
+enum BacklogSource {
+  MANUAL
+  GAPO_CHECKIN
+}
+
 model Backlog {
   id                  Int           @id @default(autoincrement())
   status              BacklogStatus @default(PENDING)
+  source              BacklogSource @default(MANUAL)
   workDate            DateTime      @db.Date @map("work_date")
   description         String?       @db.Text
   hours               Decimal       @db.Decimal(6, 2)
   costPerHourSnapshot Decimal?      @db.Decimal(18, 2) @map("cost_per_hour_snapshot")
   totalCostSnapshot   Decimal?      @db.Decimal(18, 2) @map("total_cost_snapshot")
 
-  taskId         Int       @map("task_id")
-  projectId      Int?      @map("project_id")
+  taskId         Int?      @map("task_id")
+  projectId      Int       @map("project_id")
   companyId      Int?      @map("company_id")
   userId         Int       @map("user_id")
   currencyId     Int?      @map("currency_id")
@@ -288,8 +295,8 @@ model Backlog {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  task     Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  project  Project?  @relation(fields: [projectId], references: [id])
+  task     Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project  Project   @relation(fields: [projectId], references: [id])
   company  Company?  @relation(fields: [companyId], references: [id])
   user     User      @relation("BacklogLogger", fields: [userId], references: [id])
   approver User?     @relation("BacklogApprover", fields: [approverId], references: [id])
@@ -477,6 +484,36 @@ enum AgentAuditSource {
   cron
   cli
   other
+}
+
+enum CheckinState {
+  IDLE
+  AWAITING_PROJECT
+  AWAITING_UPDATE
+  AWAITING_TASK_CONFIRM
+  COMPLETED
+}
+
+model CheckinSession {
+  id               Int          @id @default(autoincrement())
+  userId           Int          @unique @map("user_id")
+  gapoUserId       String       @map("gapo_user_id")
+  threadId         String       @map("thread_id")
+  currentProjectId Int?         @map("current_project_id")
+  currentTaskId    Int?         @map("current_task_id")
+  state            CheckinState @default(IDLE)
+  expiresAt        DateTime     @map("expires_at")
+  lastMessageId    String?      @map("last_message_id")
+  pendingText      String?      @db.Text @map("pending_text")
+  pendingParsed    Json?        @map("pending_parsed")
+  completedAt      DateTime?    @map("completed_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([state, expiresAt])
+  @@map("checkin_sessions")
 }
 
 model AgentAuditLog {

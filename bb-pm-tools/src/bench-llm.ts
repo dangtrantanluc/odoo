@@ -1,19 +1,3 @@
-#!/usr/bin/env node
-// LLM benchmark — so sánh latency / token throughput giữa các provider
-// (default = Qwen/Gemma self-host, gemini = Google Gemini compat endpoint).
-//
-// Cách chạy:
-//   pnpm --filter @openclaw/bb-pm-tools build
-//   node /home/bbsw/pm/bb-pm-tools/dist/bench-llm.js
-//
-// Hoặc với tsx (không cần build):
-//   pnpm --filter @openclaw/bb-pm-tools exec tsx src/bench-llm.ts
-//
-// Env override:
-//   BENCH_RUNS=5            # số lần chạy mỗi scenario (default 3)
-//   BENCH_WARMUP=1          # warmup không tính (default 1)
-//   SKIP_QWEN=1             # bỏ provider default
-//   SKIP_GEMINI=1           # bỏ provider gemini
 
 import "./env";
 import { chat, ChatMessage, LlmProviderName } from "./llm";
@@ -84,6 +68,9 @@ const SCENARIOS: Scenario[] = [
 
 const RUNS = Number(process.env.BENCH_RUNS || 3);
 const WARMUP = Number(process.env.BENCH_WARMUP || 1);
+if (process.env.BENCH_9ROUTER_MODEL) {
+  (config.llm["9router"] as { model: string }).model = process.env.BENCH_9ROUTER_MODEL;
+}
 
 function pct(arr: number[], p: number): number {
   if (arr.length === 0) return NaN;
@@ -164,11 +151,13 @@ function fmtRow(r: ScenarioResult | undefined): string {
 (async () => {
   const skipQwen = !!process.env.SKIP_QWEN;
   const skipGemini = !config.llm.gemini.apiKey || !!process.env.SKIP_GEMINI;
+  const skip9Router = !config.llm["9router"].apiKey || !!process.env.SKIP_9ROUTER;
 
   console.log("\n=== LLM Benchmark ===");
   console.log(`Runs:    ${RUNS} per scenario (warmup: ${WARMUP})`);
   console.log(`default: ${config.llm.default.baseUrl} / ${config.llm.default.model}`);
   console.log(`gemini:  ${config.llm.gemini.baseUrl} / ${config.llm.gemini.model}`);
+  console.log(`9router: ${config.llm["9router"].baseUrl} / ${config.llm["9router"].model}`);
   console.log();
 
   if (skipQwen) console.log("⚠️  default skipped (SKIP_QWEN=1)");
@@ -176,6 +165,11 @@ function fmtRow(r: ScenarioResult | undefined): string {
     console.log("⚠️  gemini skipped (GEMINI_API_KEY rỗng)");
   } else if (skipGemini) {
     console.log("⚠️  gemini skipped (SKIP_GEMINI=1)");
+  }
+  if (skip9Router && !process.env.SKIP_9ROUTER) {
+    console.log("⚠️  9router skipped (9ROUTER_API_KEY rỗng)");
+  } else if (skip9Router) {
+    console.log("⚠️  9router skipped (SKIP_9ROUTER=1)");
   }
   console.log();
 
@@ -186,12 +180,14 @@ function fmtRow(r: ScenarioResult | undefined): string {
   console.log("Running…");
   const qwen = skipQwen ? {} : await benchProvider("default", SCENARIOS);
   const gemini = skipGemini ? {} : await benchProvider("gemini", SCENARIOS);
+  const nineRouter = skip9Router ? {} : await benchProvider("9router", SCENARIOS);
 
   console.log("\n=== Results ===\n");
   for (const s of SCENARIOS) {
     console.log(s.name);
     if (!skipQwen) console.log(`  default: ${fmtRow(qwen[s.name])}`);
     if (!skipGemini) console.log(`  gemini:  ${fmtRow(gemini[s.name])}`);
+    if (!skip9Router) console.log(`  9router: ${fmtRow(nineRouter[s.name])}`);
     if (!skipQwen && !skipGemini) {
       const dq = qwen[s.name];
       const dg = gemini[s.name];

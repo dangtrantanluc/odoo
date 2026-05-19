@@ -1,0 +1,22 @@
+{
+  "id": "gapo-agent",
+  "enabledByDefault": false,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "webhookPath": {
+        "type": "string",
+        "default": "/api/plugins/gapo-agent/webhook"
+      },
+      "sendPath": {
+        "type": "string",
+        "default": "/api/plugins/gapo-agent/send"
+      },
+      "healthPath": {
+        "type": "string",
+        "default": "/api/plugins/gapo-agent/health"
+      }
+    }
+  }
+}

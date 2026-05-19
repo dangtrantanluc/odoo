@@ -204,7 +204,7 @@ Nhiệm vụ: adapter giữa nền tảng chat và OpenClaw core. Không biết 
 
 | Plugin | Trạng thái | Ghi chú |
 |---|---|---|
-| `gapo-work` | Skeleton đã có tại `openclaw/plugins/` — cần refactor theo `sdk-channel-plugins` | Kênh chính cho team nội bộ BlueBolt |
+| `gapo-agent` | Channel adapter production hiện tại: nhận webhook GapoWork và gửi outbound qua OpenClaw | Kênh chính cho team nội bộ BlueBolt |
 | `zalo` / `zalouser` | Bundled | CEO/khách hàng ngoài |
 | `slack` | Core | Team kỹ thuật |
 | `telegram` | Core | Dự phòng, cá nhân |

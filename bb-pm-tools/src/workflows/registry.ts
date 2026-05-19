@@ -7,9 +7,10 @@
 // gọi LLM trực tiếp — chỉ dispatch tools/HTTP. Composability cao.
 
 import { bbPm } from "../api-client";
-import { sendToGapo } from "../channel-out";
+import { sendQuickRepliesToGapo, sendToGapo } from "../channel-out";
 import type { RoleBasedDigest } from "../api-client";
 import type { AgentContext } from "../types";
+import { buildProjectSelectionReply, recordReminderMetric } from "../checkin";
 
 export type WorkflowResult = {
   ok: boolean;
@@ -192,6 +193,24 @@ const roleBasedDigest: WorkflowDef = {
   },
 };
 
+const noonCheckinReminder: WorkflowDef = {
+  name: "noon_checkin_reminder",
+  description: "DM nhắc check-in giữa ngày cho user còn thiếu check-in hôm nay.",
+  run: async (_inputs, ctx) => await runCheckinReminder("noon", ctx.correlationId),
+};
+
+const eodCheckinReminder: WorkflowDef = {
+  name: "eod_checkin_reminder",
+  description: "DM nhắc check-in cuối ngày cho user còn thiếu check-in hôm nay.",
+  run: async (_inputs, ctx) => await runCheckinReminder("eod", ctx.correlationId),
+};
+
+const missingCheckinFollowup: WorkflowDef = {
+  name: "missing_checkin_followup",
+  description: "Quét user còn thiếu check-in và DM follow-up sau giờ chốt ngày.",
+  run: async (_inputs, ctx) => await runCheckinReminder("missing", ctx.correlationId),
+};
+
 // ── overdue_ping_round (placeholder cho Phase 4.1) ──────────────────────
 // Quét overdue → ping mỗi assignee 1 lần (cooldown 24h via cooldown module).
 // Hold off until cooldown.ts được expose ở module level + decide UX.
@@ -201,6 +220,9 @@ export const workflows: Record<string, WorkflowDef> = {
   weekly_report: weeklyReport,
   hygiene_check: hygieneCheck,
   role_based_digest: roleBasedDigest,
+  noon_checkin_reminder: noonCheckinReminder,
+  eod_checkin_reminder: eodCheckinReminder,
+  missing_checkin_followup: missingCheckinFollowup,
 };
 
 export function listWorkflows(): Array<{ name: string; description: string }> {
@@ -232,6 +254,76 @@ export function ctxFromAgent(ac: AgentContext, target?: string) {
   };
 }
 
+async function runCheckinReminder(kind: "noon" | "eod" | "missing", correlationId?: string): Promise<WorkflowResult> {
+  try {
+    const missing = await bbPm.getMissingCheckins();
+    let sent = 0;
+    let skipped = 0;
+    for (const user of missing.data) {
+      const target = user.gapoThreadId || (user.gapoUserId ? `dm:${user.gapoUserId}` : null);
+      if (!target || !user.gapoUserId) {
+        skipped += 1;
+        recordReminderMetric("skipped");
+        continue;
+      }
+
+      // Noon/EOD reminders should not interrupt a user who is already in-flow.
+      // The 18:00 missing-checkin follow-up is different: if there is still no
+      // worklog for today, send one extra nudge even when the earlier reminder
+      // already opened a session. Keep the existing session intact instead of
+      // restarting it and discarding any partial progress.
+      if (user.activeSession && kind !== "missing") {
+        skipped += 1;
+        recordReminderMetric("skipped");
+        continue;
+      }
+      if (user.activeSession && kind === "missing") {
+        await sendToGapo(target, "Mình vẫn chưa thấy worklog hôm nay của bạn. Bạn cập nhật giúp mình: nội dung, số giờ, trạng thái và blocker nếu có nhé.");
+        await bbPm.postAudit({
+          tool: "checkin.reminder_missing",
+          argsJson: { userId: user.id, target, activeSession: true },
+          correlationId,
+          source: "cron",
+        });
+        sent += 1;
+        recordReminderMetric("sent");
+        continue;
+      }
+
+      const body = await buildProjectSelectionReply(user.id);
+      if (!body || body.type !== "quick_replies") {
+        skipped += 1;
+        recordReminderMetric("skipped");
+        continue;
+      }
+      await bbPm.startCheckinSession({
+        userId: user.id,
+        gapoUserId: user.gapoUserId,
+        threadId: target,
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      });
+      const prefix =
+        kind === "noon"
+          ? "Bạn cập nhật worklog hôm nay nhé: nội dung, số giờ, trạng thái và blocker nếu có."
+          : kind === "eod"
+            ? "Đến giờ chốt ngày rồi, bạn cập nhật worklog giúp mình nhé: nội dung, số giờ, trạng thái và blocker nếu có."
+            : "Mình chưa thấy worklog hôm nay của bạn.";
+      await sendQuickRepliesToGapo(target, `${prefix}\n${body.text}`, body.metadata.options);
+      await bbPm.postAudit({
+        tool: `checkin.reminder_${kind}`,
+        argsJson: { userId: user.id, target },
+        correlationId,
+        source: "cron",
+      });
+      sent += 1;
+      recordReminderMetric("sent");
+    }
+    return { ok: true, message: `${kind} reminder sent=${sent} skipped=${skipped}`, meta: { sent, skipped } };
+  } catch (err: any) {
+    return { ok: false, message: `${kind} reminder failed`, error: err?.message ?? String(err) };
+  }
+}
+
 function renderRoleDigest(d: RoleBasedDigest): string {
   switch (d.recipient.role) {
     case "ADMIN":
@@ -256,7 +348,7 @@ function renderAdminDigest(d: RoleBasedDigest): string {
     lines.push("");
     lines.push(`Can duyet backlog: ${d.pendingBacklogs.length}`);
     for (const b of d.pendingBacklogs.slice(0, 5)) {
-      lines.push(`- ${b.user.fullName}: ${b.hours}h - ${b.task.name} (${b.project?.name ?? "?"})`);
+      lines.push(`- ${b.user.fullName}: ${b.hours}h - ${b.task?.name ?? "Worklog theo project"} (${b.project?.name ?? "?"})`);
     }
   }
   pushCostRisks(lines, d);

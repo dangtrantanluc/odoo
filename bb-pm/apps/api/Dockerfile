@@ -16,6 +16,7 @@ RUN pnpm --filter @bb-pm/api build
 
 FROM base AS runtime
 ENV NODE_ENV=production
+ENV PATH=/app/apps/api/node_modules/.bin:/app/node_modules/.bin:$PATH
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages ./packages

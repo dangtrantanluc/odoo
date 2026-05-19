@@ -21,7 +21,7 @@ the DM through the UI.
 bb-pm-tools/send_follow_up
         │ (1) read channel_identity
         │
-        ├── thread present  ──► gapo-work /send (bot API, fast)
+        ├── thread present  ──► gapo-agent /send (bot API, fast)
         │
         └── no thread       ──► browser-tools /send-dm (Playwright, slower)
                                        │

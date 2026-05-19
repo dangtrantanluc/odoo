@@ -28,6 +28,8 @@ const GAPO_BASE_URL = config.gapo.baseUrl.replace(/\/$/, "");
 const MESSENGER_ROOT = `${GAPO_BASE_URL}/messenger/0`;
 const POLL_INTERVAL_MS = 10_000;
 const COOLDOWN_MS = 30_000;
+const NAV_RETRIES = 3;
+const NAV_RETRY_DELAY_MS = 1200;
 
 type WatcherState = "stopped" | "starting" | "running" | "stopping";
 
@@ -53,6 +55,21 @@ function isLikelySystemMessage(body: string): boolean {
   );
 }
 
+function isLikelyBotFiller(body: string): boolean {
+  const text = body.trim();
+  if (!text) return false;
+  return /^[\s\u{1F44D}\u{1F44C}\u{1F914}]*(Đang|Mình\s+đang|Để\s+mình|Đợi|Cho\s+mình|Processing|Thinking|Checking|Loading|Analyzing|Fetching|Working\s+on\s+it|One\s+moment|Just\s+a\s+sec|Almost\s+there|Hmm|Câu\s+này|Vẫn\s+đang|Mình\s+vẫn|Sắp\s+xong)/iu.test(text);
+}
+
+function isRetryableNavigationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /ERR_CONNECTION_CLOSED|ERR_CONNECTION_RESET|ERR_NETWORK_CHANGED|ERR_TIMED_OUT|Timeout|net::ERR/i.test(msg);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 interface IncomingHit {
   // Full URL path of the sidebar link, used both as dedup key and for
   // navigation. Examples:
@@ -72,6 +89,7 @@ interface WatcherStats {
   state: WatcherState;
   startedAt: number | null;
   botName: string;
+  inFlight: boolean;
   hitsSeen: number;
   replied: number;
   skippedCooldown: number;
@@ -134,7 +152,9 @@ class MessageWatcher {
     this.state = "starting";
     try {
       this.page = await newLongLivedPage();
-      await this.page.goto(MESSENGER_ROOT, { waitUntil: "domcontentloaded" });
+      this.page.setDefaultTimeout(30_000);
+      this.page.setDefaultNavigationTimeout(30_000);
+      await this.gotoWithRetry(MESSENGER_ROOT, "start:root");
       // Wait for the sidebar to render (any messenger link). `/messenger/0`
       // has no chat input because no conversation is selected — only the
       // sidebar matters for badge detection.
@@ -208,6 +228,7 @@ class MessageWatcher {
       state: this.state,
       startedAt: this.startedAt,
       botName: this.botName,
+      inFlight: this.inFlight,
       ...this.stats,
       queueDepth: this.queue.length,
       cooldownEntries: this.cooldowns.size,
@@ -237,7 +258,7 @@ class MessageWatcher {
     }
     // Navigate back to root so any conversation badges become visible.
     try {
-      await this.page.goto(MESSENGER_ROOT, { waitUntil: "domcontentloaded" });
+      await this.gotoWithRetry(MESSENGER_ROOT, "kick:root");
       await this.page.waitForSelector('a[href*="/messenger/"]', { timeout: 15000 });
       await this.pollOnce();
       return { ok: true, pageUrl: this.page.url() };
@@ -415,9 +436,7 @@ class MessageWatcher {
     console.log(`[watcher] process kind=${hit.kind} cid=${hit.conversationId} via ${hit.source}`);
 
     // Navigate using the original href (preserves /messenger vs /collab/.../chat).
-    await this.page.goto(`${GAPO_BASE_URL}${hit.href}`, {
-      waitUntil: "domcontentloaded",
-    });
+    await this.gotoWithRetry(`${GAPO_BASE_URL}${hit.href}`, `process:${hit.conversationId}`);
     await this.page.waitForSelector('[role=textbox][contenteditable=true]', { timeout: 15000 });
     await this.page.waitForTimeout(800);
 
@@ -460,7 +479,6 @@ class MessageWatcher {
     // bot replies on this cid). BOT_ACK_RE catch typing indicator nhưng
     // KHÔNG catch reply ngắn ("OK bạn 👍", "Chào bạn!", "Đã ghi nhận"...) —
     // dẫn tới bot reply to self loop. Track exact texts là reliable.
-    const BOT_ACK_RE_LASTMSG = /^[\s\u{1F44D}\u{1F44C}\u{1F914}🕐]*(Đang\s+xử\s+lý|Vẫn\s+đang\s+chạy|Mình\s+đang\s+xử\s+lý)/iu;
     const knownBotTexts = this.recentBotTexts.get(hit.conversationId) ?? [];
     const isBotEcho = (body: string): boolean => {
       const trimmed = body.trim();
@@ -481,7 +499,7 @@ class MessageWatcher {
       .filter((m) => {
         if (m.isOwn) return false;
         if (this.botName && m.author.includes(this.botName)) return false;
-        if (BOT_ACK_RE_LASTMSG.test(m.body)) return false;
+        if (isLikelyBotFiller(m.body)) return false;
         if (isBotEcho(m.body)) return false;
         if (isLikelySystemMessage(m.body)) return false;
         return true;
@@ -647,6 +665,7 @@ class MessageWatcher {
 
     // Build LLM payload
     const transcript = ctx.recent
+      .filter((m) => !isLikelyBotFiller(m.body))
       .map(m => `${m.isOwn ? "Bot" : m.author || "User"}: ${m.body}`)
       .join("\n");
     const payload = {
@@ -654,6 +673,7 @@ class MessageWatcher {
       conversationId: `gapo:${hit.conversationId}`,
       correlationId: `watcher-${hit.conversationId}-${Date.now()}`,
       source: "chat",
+      skipChannelAck: true,
     };
 
     // Call agent — F4 (2026-05-07): explicit timeout 320s align với
@@ -784,13 +804,14 @@ class MessageWatcher {
     // - `.last()` because the main composer is typically the LAST
     //   Draft.js editor in DOM order (any thread/reply panel renders before).
     const input = this.page.locator('[role=textbox][contenteditable=true].public-DraftEditor-content').last();
-    await input.click();
+    const textToSend = cleanedReply.slice(0, 2000);
+    console.log(`[watcher] cid=${hit.conversationId} sending reply (${textToSend.length} chars)`);
+    await input.click({ timeout: 10000 });
     // Clear any leftover placeholder from typing-indicator step.
     await this.page.keyboard.press("Control+A").catch(() => null);
     await this.page.keyboard.press("Backspace").catch(() => null);
-    const textToSend = cleanedReply.slice(0, 2000);
     await input.type(textToSend, { delay: 10, timeout: 120_000 });
-    await input.press("Enter");
+    await this.page.keyboard.press("Enter");
     await this.page.waitForTimeout(1500);
 
     // v5: track exact reply text để filter khỏi user-msg detection ở
@@ -838,7 +859,6 @@ class MessageWatcher {
         const ourReplyHead = ourReplyText.slice(0, 50);
         // Ack patterns mình type — phải khớp với watcher.ts:488 và
         // bb-pm-tools/src/orchestrator.ts:scheduleAck text.
-        const BOT_ACK_RE = /^[\s\u{1F44D}\u{1F44C}\u{1F914}🕐]*(Đang\s+xử\s+lý|Vẫn\s+đang\s+chạy|Mình\s+đang\s+xử\s+lý)/iu;
         // v5: also exclude bằng recentBotTexts (catch reply ngắn không match
         // ourReplyHead startsWith vì DOM split bubble).
         const knownBotTextsRescan = this.recentBotTexts.get(hit.conversationId) ?? [];
@@ -859,7 +879,7 @@ class MessageWatcher {
             if (m.isOwn) return false;
             if (this.botName && m.author.includes(this.botName)) return false;
             if (ourReplyHead && m.body.startsWith(ourReplyHead)) return false;
-            if (BOT_ACK_RE.test(m.body)) return false;
+            if (isLikelyBotFiller(m.body)) return false;
             if (isBotEchoRescan(m.body)) return false; // v5
             if (isLikelySystemMessage(m.body)) return false;
             return true;
@@ -905,7 +925,7 @@ class MessageWatcher {
     // auto-marks subsequent inbound messages from that user as read so no
     // unread badge ever appears in the sidebar — and our observer relies
     // on badges. Bouncing back to the root keeps detection alive.
-    await this.page.goto(MESSENGER_ROOT, { waitUntil: "domcontentloaded" }).catch(() => null);
+    await this.gotoWithRetry(MESSENGER_ROOT, `process:${hit.conversationId}:root`).catch(() => null);
     await this.page.waitForSelector('a[href*="/messenger/"]', { timeout: 15000 }).catch(() => null);
     // Clear lastSeenBadgeKey for this conversation so the next badge with
     // a fresh count is treated as a brand-new hit, not a dedup.
@@ -926,6 +946,25 @@ class MessageWatcher {
         void this.pollOnce();
       }
     }, this.cfg.cooldownMs + 1000);
+  }
+
+  private async gotoWithRetry(url: string, label: string): Promise<void> {
+    if (!this.page) throw new Error(`goto ${label}: page unavailable`);
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= NAV_RETRIES; attempt++) {
+      try {
+        await this.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (attempt >= NAV_RETRIES || !isRetryableNavigationError(err)) break;
+        console.warn(
+          `[watcher] goto retry ${attempt}/${NAV_RETRIES} label=${label} url=${url}: ${(err as any)?.message ?? err}`,
+        );
+        await sleep(NAV_RETRY_DELAY_MS * attempt);
+      }
+    }
+    throw lastErr;
   }
 }
 
