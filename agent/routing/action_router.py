@@ -117,6 +117,49 @@ class ActionRouter:
             return "Thao tác gặp lỗi khi thực hiện, bạn thử lại sau nhé.", "action:error"
         return "Không rõ thao tác.", "action:unknown"
 
+    # ── public API cho Dispatcher (LLM-first routing) ───────────────────
+    async def preview_and_pend(
+        self, action: dict[str, Any], ctx: TurnRequest
+    ) -> Optional[tuple[str, str]]:
+        """Show preview + ghi pending vào Redis cho confirm-flow.
+
+        Dispatcher gọi khi LLM trả intent=action với entities đã extract.
+        Trả None nếu thiếu data; ngược lại trả (preview_text, pattern).
+        """
+        if not ctx.conversation_id:
+            return None
+        preview = _preview_text(action)
+        if preview is None:
+            return None
+        await self._set_pending(ctx.conversation_id, action)
+        return (
+            f"{preview}\n\nXác nhận? (trả lời \"ok\" hoặc \"hủy\")",
+            "action:preview",
+        )
+
+    async def check_pending_and_consume(
+        self, text: str, ctx: TurnRequest
+    ) -> Optional[tuple[str, str]]:
+        """Nếu user trả 'ok'/'hủy' lúc có pending → exec/clear. None nếu không.
+
+        Dispatcher gọi đầu mỗi turn để xử lý confirm trước khi classify lại.
+        """
+        if not ctx.conversation_id:
+            return None
+        pending = await self._get_pending(ctx.conversation_id)
+        if pending is None:
+            return None
+        n = normalize(text.strip())
+        if _CONFIRM.match(n):
+            await self._clear_pending(ctx.conversation_id)
+            return await self._execute(pending)
+        if _CANCEL.match(n):
+            await self._clear_pending(ctx.conversation_id)
+            return "Đã hủy thao tác.", "action:cancelled"
+        # Câu khác → drop pending để không kẹt vĩnh viễn.
+        await self._clear_pending(ctx.conversation_id)
+        return None
+
     async def _resolve_project(self, name: str) -> Optional[dict[str, Any]]:
         projects = await self._catalog._bbpm.list_projects(q=name)  # noqa: SLF001
         if not projects:
@@ -172,4 +215,18 @@ def _resolve_status(raw: str) -> Optional[str]:
     for word, status in _STATUS_WORDS.items():
         if word in n:
             return status
+    return None
+
+
+def _preview_text(action: dict[str, Any]) -> Optional[str]:
+    """Build human-readable preview cho action payload (LLM-first path)."""
+    kind = action.get("type")
+    if kind == "deadline":
+        return f"Đổi deadline task #{action.get('task_id')} sang {action.get('deadline')}."
+    if kind == "status":
+        return (f"Đổi trạng thái task #{action.get('task_id')} sang "
+                f"{action.get('status')}.")
+    if kind == "create_task":
+        return (f'Tạo task "{action.get("name")}" trong dự án '
+                f'"{action.get("project")}".')
     return None

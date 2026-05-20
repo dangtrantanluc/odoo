@@ -125,6 +125,9 @@ class CronConfig(BaseModel):
     audit_retention_days: int = 90
     audit_cleanup_schedule: str = "0 3 * * *"
     automation_poll_sec: int = 60
+    # Risk scan — quét sau EOD; rỗng = tắt.
+    risk_scan: CronJob = Field(default_factory=lambda: CronJob(schedule="30 18 * * 1-5"))
+    risk_scan_enabled: bool = False
 
 
 class Settings(BaseModel):
@@ -146,6 +149,8 @@ class Settings(BaseModel):
     # Logging.
     io_log_enabled: bool = True
     io_log_max_chars: int = 2000
+    # Routing: bật kiến trúc LLM-first (Option B). Tắt → rollback path cũ.
+    llm_first_routing: bool = True
 
 
 def _llm_config() -> LlmConfig:
@@ -242,6 +247,11 @@ def load_settings() -> Settings:
             audit_retention_days=_int("AUDIT_RETENTION_DAYS", default=90),
             audit_cleanup_schedule=_env("AUDIT_CLEANUP_SCHEDULE", default="0 3 * * *"),
             automation_poll_sec=max(1, _int("AUTOMATION_POLL_MS", default=60_000) // 1000),
+            risk_scan=CronJob(
+                schedule=_env("CRON_RISK_SCAN", default="30 18 * * 1-5"),
+                target=_env("CRON_RISK_SCAN_TARGET"),
+            ),
+            risk_scan_enabled=_bool("CRON_RISK_SCAN_ENABLED"),
         ),
         admin_alert_target=_env("ADMIN_ALERT_TARGET"),
         checkin_session_ttl_sec=_int("CHECKIN_SESSION_TTL_MS", default=2 * 3600 * 1000) // 1000,
@@ -251,6 +261,7 @@ def load_settings() -> Settings:
         port=_int("PM_AGENT_PORT", "PORT", default=8001),
         io_log_enabled=not _bool("BB_PM_IO_LOG_DISABLED"),
         io_log_max_chars=_int("BB_PM_IO_LOG_MAX_CHARS", default=2000),
+        llm_first_routing=_bool("LLM_FIRST_ROUTING", default=True),
     )
 
 

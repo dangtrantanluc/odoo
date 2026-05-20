@@ -1,11 +1,13 @@
-"""Orchestrator pipeline — routes one conversational turn.
+"""Orchestrator pipeline — pre-process → Intent Router → 1 trong 2 agent.
 
-Ports the layered routing of bb-pm-tools/src/webhook.ts:
+Trước đây pipeline là chuỗi tuần tự (checkin → action → fast-path → NL-SQL).
+Sau refactor:
+  - pre-process: rate-limit → dedup → resolve identity (giữ nguyên).
+  - dispatch: IntentRouter.classify(...) ∈ {PLANNING, DAILY} →
+        PlanningAgent.handle_turn(...)   |   DailyExecutionAgent.handle(...)
 
-    rate-limit → dedup → check-in → action → fast-path → NL-read → no-match
-
-The ReAct LLM agent was removed upstream (Phương án C′); turns that match no
-layer get a short help message instead.
+DailyExecutionAgent đóng gói nguyên chuỗi cũ — không đổi behavior nhánh
+hằng-ngày.
 """
 
 from __future__ import annotations
@@ -14,42 +16,33 @@ import re
 import time
 from typing import Optional
 
-from checkin.service import CheckinService
 from core.logging import log_event
 from infrastructure.bbpm_client import BbPmClient
 from orchestrator import telemetry
 from orchestrator.caller_cache import resolve_caller
+from orchestrator.daily_agent import DailyExecutionAgent
 from orchestrator.dedup import check_duplicate
 from orchestrator.rate_limit import check_rate_limit
-from routing.action_router import ActionRouter
-from routing.fast_path.router import FastPathRouter
-from routing.read_router import ReadRouter
+from planning.service import PlanningAgent
+from routing.intent_router import IntentBranch, IntentRouter
 from shared.text import strip_markdown_for_gapo
-from shared.types import TurnReply, TurnRequest
+from shared.types import ReplyBody, TurnReply, TurnRequest
 
 _SLASH = re.compile(r"^\s*/[a-z][a-z0-9_-]*", re.IGNORECASE)
-_CHECKIN_CMD = re.compile(r"^\s*/(?:checkin|worklog|project)\b", re.IGNORECASE)
-
-_NO_MATCH = (
-    "Mình chưa hiểu yêu cầu này. Gõ /help để xem các lệnh, "
-    "hoặc /checkin để cập nhật worklog."
-)
 
 
 class Orchestrator:
     def __init__(
         self,
         bbpm: BbPmClient,
-        checkin: CheckinService,
-        fast_path: FastPathRouter,
-        action: ActionRouter,
-        read: ReadRouter,
+        intent: IntentRouter,
+        planning: PlanningAgent,
+        daily: DailyExecutionAgent,
     ) -> None:
         self._bbpm = bbpm
-        self._checkin = checkin
-        self._fast_path = fast_path
-        self._action = action
-        self._read = read
+        self._intent = intent
+        self._planning = planning
+        self._daily = daily
 
     async def handle(self, request: TurnRequest) -> TurnReply:
         started = time.monotonic()
@@ -84,36 +77,35 @@ class Orchestrator:
             if user:
                 request.caller_user_id = user.get("id")
                 company_id = user.get("companyId") or user.get("company_id")
+                # gắn role + company vào metadata để PlanningAgent kiểm RBAC
+                meta = request.metadata or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                if user.get("role"):
+                    meta["role"] = user.get("role")
+                if user.get("isSuperAdmin"):
+                    meta["is_super_admin"] = True
+                if company_id is not None:
+                    meta["company_id"] = company_id
+                request.metadata = meta
 
-        # 4. check-in (first, unless this is a non-checkin slash command)
-        prefer_checkin = bool(_CHECKIN_CMD.match(text)) or not is_slash
-        if prefer_checkin:
-            result = await self._checkin.handle_turn(text, request)
-            if result is not None:
-                return self._done(request, started, "checkin", reply=result.reply,
-                                  channel_reply=result.channel_reply, pattern=result.pattern)
+        # 4. Intent Router → dispatch 2 nhánh
+        branch = await self._intent.classify(text, request)
 
-        # 5. action router (natural-language writes with confirm)
-        action = await self._action.handle(text, request)
-        if action is not None:
-            return self._done(request, started, "action", reply=action[0], pattern=action[1])
+        if branch == IntentBranch.PLANNING:
+            reply, channel_reply, pattern = await self._planning.handle_turn(text, request)
+            return self._done(request, started, "planning", reply=reply,
+                              channel_reply=channel_reply, pattern=pattern)
 
-        # 6. fast-path (slash commands + VN patterns)
-        fast = await self._fast_path.try_fast_path(text, request)
-        if fast is not None:
-            return self._done(request, started, "fast_path", reply=fast[0], pattern=fast[1])
-
-        # 7. NL-to-SQL read
-        if is_chat:
-            read = await self._read.try_read(text, request, company_id)
-            if read is not None:
-                return self._done(request, started, "read", reply=read[0], pattern=read[1])
-
-        # 8. no match
-        return self._done(request, started, "no_match", reply=_NO_MATCH)
+        reply, channel_reply, mode, pattern = await self._daily.handle(
+            text, request, company_id
+        )
+        return self._done(request, started, mode, reply=reply,
+                          channel_reply=channel_reply, pattern=pattern)
 
     @staticmethod
-    def _done(request, started, mode, *, reply, channel_reply=None, pattern=None) -> TurnReply:
+    def _done(request, started, mode, *, reply, channel_reply: Optional[ReplyBody] = None,
+              pattern: Optional[str] = None) -> TurnReply:
         total_ms = int((time.monotonic() - started) * 1000)
         telemetry.record_run(mode, total_ms)
         log_event("pipeline.turn", mode=mode, pattern=pattern, total_ms=total_ms,

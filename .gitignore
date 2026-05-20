@@ -1,0 +1,3 @@
+
+# local test env (chứa token bot test)
+.env.test

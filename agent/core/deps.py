@@ -14,11 +14,19 @@ from checkin.service import CheckinService
 from infrastructure.bbpm_client import BbPmClient
 from infrastructure.llm_client import LlmClient
 from infrastructure.redis import redis_client
+from orchestrator.daily_agent import DailyExecutionAgent
 from orchestrator.pipeline import Orchestrator
+from planning.service import PlanningAgent
+from planning.session import PlanningSessionStore
 from reporting.nl_to_sql.translator import NlToSqlTranslator
 from routing.action_router import ActionRouter
+from routing.dispatcher import Dispatcher
 from routing.fast_path.router import FastPathRouter
+from routing.intent_router import IntentRouter
+from routing.llm_intent_fallback import LlmIntentFallback
+from routing.llm_intent_router import LlmIntentRouter
 from routing.read_router import ReadRouter
+from routing.smalltalk_router import SmallTalkRouter
 from shared.types import TurnReply, TurnRequest
 from tools.catalog import ToolCatalog
 from workflows.registry import WorkflowRegistry
@@ -33,6 +41,7 @@ class Container:
         self.gapo_handler: Optional[GapoHandler] = None
         self.catalog: Optional[ToolCatalog] = None
         self.checkin: Optional[CheckinService] = None
+        self.planning: Optional[PlanningAgent] = None
         self.orchestrator: Optional[Orchestrator] = None
         self.registry: Optional[WorkflowRegistry] = None
         self.scheduler: Optional[AgentScheduler] = None
@@ -47,17 +56,49 @@ class Container:
     async def startup(self) -> None:
         self.bbpm = BbPmClient()
         self.llm = LlmClient()
-        self.catalog = ToolCatalog(self.bbpm)
+        self.catalog = ToolCatalog(self.bbpm, self.llm)
         self.checkin = CheckinService(self.bbpm, self.llm)
+
         fast_path = FastPathRouter(self.catalog)
         action = ActionRouter(self.catalog)
         translator = NlToSqlTranslator(self.bbpm, self.llm)
         read = ReadRouter(translator)
-        self.orchestrator = Orchestrator(self.bbpm, self.checkin, fast_path, action, read)
+
+        # ── 2-branch dispatch ──────────────────────────────────────────
+        planning_sessions = PlanningSessionStore()
+        intent = IntentRouter(planning_sessions)
+        smalltalk = SmallTalkRouter()
+        llm_fallback = LlmIntentFallback(self.llm, translator)
+
+        # Planning Agent phải khởi tạo TRƯỚC dispatcher để được inject vào.
+        self.planning = PlanningAgent(
+            bbpm=self.bbpm, llm=self.llm, sessions=planning_sessions
+        )
+
+        # LLM-first routing stack (Option B)
+        llm_intent_router = LlmIntentRouter(self.llm)
+        dispatcher = Dispatcher(
+            catalog=self.catalog,
+            translator=translator,
+            action=action,
+            checkin=self.checkin,
+            planning=self.planning,
+            bbpm=self.bbpm,
+        )
+
+        daily = DailyExecutionAgent(
+            self.bbpm, self.checkin, fast_path, action, read,
+            smalltalk=smalltalk, llm_fallback=llm_fallback,
+            intent_router=llm_intent_router, dispatcher=dispatcher,
+        )
+        self.orchestrator = Orchestrator(self.bbpm, intent, self.planning, daily)
+
         self.gapo_client = GapoClient()
         self.gapo_handler = GapoHandler(self.gapo_client, self.run_turn)
         await self.redis.connect()
-        self.registry = WorkflowRegistry(self.bbpm, self.catalog, self.gapo_client, self.checkin)
+        self.registry = WorkflowRegistry(
+            self.bbpm, self.catalog, self.gapo_client, self.checkin, self.llm
+        )
         self.scheduler = AgentScheduler(self.registry, self.bbpm)
         self.scheduler.start()
 

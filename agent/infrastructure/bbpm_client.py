@@ -21,6 +21,22 @@ def _params(**kwargs: Any) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+def _to_float(value: Any) -> float:
+    """Coerce hours / decimal-like fields to JSON number.
+
+    bb-pm API (Zod) reject string khi schema khai báo number — vd
+    `hours: z.number()`. Caller cũ có thể truyền `"2"`; ép về float để
+    payload luôn hợp lệ.
+    """
+    if isinstance(value, bool):  # bool là instance của int — chặn nhầm lẫn
+        raise TypeError("hours không nhận bool")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value.strip())
+    raise TypeError(f"hours phải là số hoặc str, nhận {type(value).__name__}")
+
+
 class BbPmApiError(RuntimeError):
     def __init__(self, status: int, body: str) -> None:
         self.status = status
@@ -119,6 +135,61 @@ class BbPmClient:
         return await self._data("POST", f"/tasks/{task_id}/blocker",
                                  json={"description": description, "severity": severity})
 
+    # ── Members ────────────────────────────────────────────────────────
+    async def add_member(
+        self, project_id: int, *, user_id: int, role: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return await self._data("POST", f"/members/by-project/{project_id}",
+                                 json=_params(userId=user_id, role=role))
+
+    async def list_members(self, project_id: int) -> list[dict[str, Any]]:
+        return await self._data("GET", "/members",
+                                 params={"projectId": project_id})
+
+    # ── Milestones (đóng vai "epic") ───────────────────────────────────
+    async def create_milestone(
+        self, project_id: int, *,
+        name: str,
+        due_date: Optional[str] = None,
+        description: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return await self._data("POST", f"/milestones/by-project/{project_id}",
+                                 json=_params(name=name, dueDate=due_date,
+                                              description=description, status=status))
+
+    async def list_milestones(self, project_id: int) -> list[dict[str, Any]]:
+        return await self._data("GET", "/milestones", params={"projectId": project_id})
+
+    async def patch_milestone(self, milestone_id: int, **fields: Any) -> dict[str, Any]:
+        return await self._data("PATCH", f"/milestones/{milestone_id}",
+                                 json=_params(**fields))
+
+    # ── Scopes (mục estimate — gắn taskId để có estimate per-task) ─────
+    async def create_scope(
+        self, project_id: int, *,
+        name: str,
+        estimated_hours: Optional[float] = None,
+        estimated_rate: Optional[float] = None,
+        estimated_cost: Optional[float] = None,
+        task_id: Optional[int] = None,
+        assignee_id: Optional[int] = None,
+        currency_id: Optional[int] = None,
+        sequence: Optional[int] = None,
+        notes: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return await self._data("POST", f"/scopes/by-project/{project_id}",
+                                 json=_params(name=name,
+                                              estimatedHours=estimated_hours,
+                                              estimatedRate=estimated_rate,
+                                              estimatedCost=estimated_cost,
+                                              taskId=task_id, assigneeId=assignee_id,
+                                              currencyId=currency_id,
+                                              sequence=sequence, notes=notes))
+
+    async def list_scopes(self, project_id: int) -> list[dict[str, Any]]:
+        return await self._data("GET", "/scopes", params={"projectId": project_id})
+
     # ── Projects ────────────────────────────────────────────────────────
     async def get_project(self, project_id: int) -> dict[str, Any]:
         return await self._data("GET", f"/projects/{project_id}")
@@ -210,14 +281,17 @@ class BbPmClient:
 
     # ── Check-ins ───────────────────────────────────────────────────────
     async def import_checkin(
-        self, *, user_id: int, project_id: int, work_date: str, hours: str,
-        description: str, task_id: Optional[int] = None,
+        self, *, user_id: int, project_id: int, work_date: str,
+        hours: Any, description: str, task_id: Optional[int] = None,
     ) -> dict[str, Any]:
         return await self._data("POST", "/agent/checkins/import", json=_params(
             userId=user_id, projectId=project_id, taskId=task_id,
-            workDate=work_date, hours=hours, description=description))
+            workDate=work_date, hours=_to_float(hours),
+            description=description))
 
     async def update_checkin(self, backlog_id: int, **fields: Any) -> dict[str, Any]:
+        if "hours" in fields and fields["hours"] is not None:
+            fields["hours"] = _to_float(fields["hours"])
         return await self._data("PATCH", f"/agent/checkins/{backlog_id}",
                                  json=_params(**fields))
 

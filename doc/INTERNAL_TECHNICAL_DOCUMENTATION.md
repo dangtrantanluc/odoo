@@ -20,8 +20,8 @@
 14. [Deployment & Operations](#14-deployment--operations)
 15. [Troubleshooting](#15-troubleshooting)
 16. [Maintenance Notes](#16-maintenance-notes)
-17. [bb-pm-tools Deep Dive](#17-bb-pm-tools-deep-dive)
-18. [OpenClaw Integration Deep Dive](#18-openclaw-integration-deep-dive)
+17. [Python Agent Service — Deep Dive](#17-python-agent-service--deep-dive)
+18. [Channel Integration, Deployment & Testing](#18-channel-integration-deployment--testing)
 19. [Daily Check-in Deep Dive](#19-daily-check-in-deep-dive)
 
 ---
@@ -366,6 +366,64 @@ bb-pm/
 ├── ARCHITECTURE.md
 ├── WALKTHROUGH.md
 └── INTERNAL_TECHNICAL_DOCUMENTATION.md
+```
+
+Repo gốc `/home/bbsw/hakuryu` còn chứa **service Python `agent/`** — PM Agent độc lập đã thay
+thế hoàn toàn OpenClaw + 3 plugin TypeScript cũ (`bb-pm-tools/`, `gapo-agent/`, `browser-tools/`
+đã bị xoá). Xem chi tiết ở [Section 17](#17-python-agent-service--deep-dive):
+
+```text
+agent/
+├── app/
+│   ├── main.py                 # FastAPI app, lifespan, wire DI, mount routers
+│   └── api/
+│       ├── routes_agent.py     # POST /api/plugins/bb-pm/agent/run, /metrics, /health
+│       ├── routes_gapo.py      # POST /api/plugins/gapo-agent/{webhook,send}, /health
+│       └── routes_debug.py     # POST /debug/normalize-gapo
+├── core/
+│   ├── config.py               # Settings: LLM đa provider, gapo, redis, cron, rate-limit
+│   ├── logging.py              # JSON structured logger + truncate
+│   └── deps.py                 # Container — DI singletons
+├── channel/
+│   ├── base.py                 # ChannelAdapter Protocol + TurnHandler type
+│   └── gapo/
+│       ├── models.py           # GapoNormalizedEvent, GapoMessageBody, GapoSendResult
+│       ├── normalizer.py       # normalize_gapo_payload + should_process filter
+│       ├── client.py           # GapoClient — gửi tin qua Gapo Bot API
+│       └── handler.py          # GapoHandler — webhook handler, event dedup
+├── orchestrator/
+│   ├── pipeline.py             # Orchestrator — pipeline xử lý 1 turn
+│   ├── rate_limit.py           # token-bucket per-caller (Redis / in-mem)
+│   ├── dedup.py                # re-send dedup (sha256, TTL)
+│   ├── concurrency.py          # asyncio.Semaphore slot limiter
+│   ├── caller_cache.py         # cache Gapo external_id -> bb-pm user
+│   ├── cooldown.py             # cooldown follow-up (Redis)
+│   └── telemetry.py            # counter theo mode
+├── routing/
+│   ├── fast_path/router.py     # slash command + VN regex pattern
+│   ├── action_router.py        # natural-language write + confirm
+│   └── read_router.py          # classify read/action/ambiguous
+├── checkin/
+│   ├── models.py               # ParsedCheckin, CheckinTurnResult
+│   ├── parser.py               # parse_checkin (LLM + regex fallback)
+│   └── service.py              # CheckinService — state machine
+├── reporting/nl_to_sql/translator.py   # NL -> SQL (SELECT-only, company scope)
+├── tools/
+│   ├── catalog.py              # ToolCatalog — query/action functions
+│   └── format.py               # render text tiếng Việt
+├── workflows/
+│   ├── registry.py             # WorkflowRegistry — 7 workflow
+│   └── scheduler.py            # AgentScheduler — APScheduler
+├── infrastructure/
+│   ├── bbpm_client.py          # BbPmClient — ~45 method gọi bb-pm API
+│   ├── llm_client.py           # LlmClient — multi-provider OpenAI-compat
+│   └── redis.py                # RedisClient — async pool
+├── shared/
+│   ├── types.py                # TurnRequest, TurnReply, ReplyBody
+│   └── text.py                 # normalize (bỏ dấu), strip_markdown_for_gapo
+├── tests/
+├── Dockerfile
+└── requirements.txt
 ```
 
 ## 4.1 File quan trọng
@@ -1443,999 +1501,627 @@ Trước khi tách microservice, nên ưu tiên:
 
 ---
 
-# 17. bb-pm-tools Deep Dive
+# 17. Python Agent Service — Deep Dive
 
-## 17.1 bb-pm-tools là gì
+> Section này thay thế hoàn toàn tài liệu "bb-pm-tools Deep Dive" và "OpenClaw Integration"
+> cũ. Từ 2026-05, PM Agent đã được **port sang một service Python độc lập** (`agent/`),
+> bỏ hoàn toàn OpenClaw và 3 plugin TypeScript. Section này mô tả **từng module, từng file,
+> từng hàm và biến quan trọng** để đọc hiểu codebase `agent/`.
 
-`bb-pm-tools` là OpenClaw plugin đóng vai trò PM Agent orchestrator cho hệ thống BB-PM.
+## 17.1 Tổng quan
 
-Nói ngắn gọn:
+`agent/` là một **FastAPI service** chạy độc lập (1 process Python, 1 uvicorn worker),
+thay cho OpenClaw gateway + plugin `bb-pm-tools` + `gapo-agent`. Nó:
 
-- `bb-pm` là source of truth và REST API.
-- `bb-pm-tools` là brain/runtime của agent: nhận câu hỏi, gọi LLM, chọn tool, gọi API, audit, format reply, schedule workflow.
-- `gapo-agent` hoặc channel adapter khác chỉ là lớp nhận/gửi message.
-- OpenClaw là plugin host và HTTP gateway để các plugin giao tiếp.
+- Nhận webhook GapoWork tại `POST /api/plugins/gapo-agent/webhook`.
+- Định tuyến mỗi turn chat qua pipeline nhiều tầng (check-in → action → fast-path → NL-to-SQL).
+- Gọi `bb-pm API` (header `X-Agent-Token`) cho mọi nghiệp vụ — không chạm Postgres trực tiếp.
+- Gửi tin trả lời qua Gapo Bot API.
+- Chạy cron workflow (digest, reminder, automation) bằng APScheduler.
 
-WHY tách `bb-pm-tools` khỏi `bb-pm`:
+Nguyên tắc kiến trúc: **ranh giới module rõ ràng** — `channel/` (adapter Gapo) tách khỏi
+`orchestrator/` (pipeline); hai bên gọi nhau bằng function call trong cùng process (không
+còn HTTP inter-plugin như thời OpenClaw).
 
-- Agent runtime có latency, retry, LLM, prompt, rate limit, channel concerns khác hẳn CRUD API.
-- BB-PM API cần ổn định, deterministic, dễ test.
-- Agent có thể thay LLM/provider/prompt mà không migrate backend.
-- Channel adapter có thể thay từ Gapo sang Slack/Telegram mà không đổi core PM domain.
+Stack: FastAPI + uvicorn, httpx (async HTTP), Pydantic v2, APScheduler (cron), redis-py
+(async), tenacity (retry LLM).
 
-## 17.2 Vị trí trong workspace
+## 17.2 Luồng tổng thể của một turn
 
-```text
-/home/bbsw/pm/
-├── bb-pm/              # Core React + Fastify + Prisma app
-├── bb-pm-tools/        # OpenClaw plugin: PM agent orchestrator
-└── openclaw/openclaw/  # OpenClaw gateway/plugin host + gapo-agent plugin
+```
+GapoWork → POST /api/plugins/gapo-agent/webhook
+  → routes_gapo.gapo_webhook()              (app/api/routes_gapo.py)
+  → GapoHandler.handle_webhook()            (channel/gapo/handler.py)
+       ├─ normalize_gapo_payload()          (channel/gapo/normalizer.py)
+       ├─ event dedup (5 phút)
+       ├─ should_process filter
+       └─ container.run_turn(TurnRequest)   (core/deps.py)
+            → Orchestrator.handle()         (orchestrator/pipeline.py)
+                 1. rate-limit              (orchestrator/rate_limit.py)
+                 2. dedup re-send           (orchestrator/dedup.py)
+                 3. resolve caller          (orchestrator/caller_cache.py)
+                 4. CheckinService.handle_turn()   (checkin/service.py)
+                 5. ActionRouter.handle()          (routing/action_router.py)
+                 6. FastPathRouter.try_fast_path() (routing/fast_path/router.py)
+                 7. ReadRouter.try_read()          (routing/read_router.py → NL-to-SQL)
+                 8. no_match fallback
+            ← TurnReply
+  → GapoHandler._deliver() → GapoClient.send() → Gapo Bot API
 ```
 
-## 17.3 Package overview
-
-`bb-pm-tools/package.json`:
-
-| Field | Ý nghĩa |
-|---|---|
-| `name: @openclaw/bb-pm-tools` | Plugin package name |
-| `main: dist/index.js` | Built plugin entry |
-| `type: commonjs` | Plugin build output currently CommonJS |
-| `openclaw.extensions` | OpenClaw loads `./dist/index.js` |
-
-Main scripts:
-
-```bash
-pnpm build              # TypeScript compile
-pnpm typecheck          # tsc --noEmit
-pnpm cli "task nào quá hạn?"
-pnpm bench              # LLM benchmark helper
-pnpm eval               # eval runner
-pnpm test               # formatter + pre-classifier tests
-```
-
-Key dependencies:
-
-| Dependency | Vai trò |
-|---|---|
-| `node-fetch` | Call BB-PM API, LLM endpoint, plugin endpoints |
-| `node-cron` | Legacy cron jobs + DB-backed automations |
-| `ioredis` | Optional distributed cooldown/rate-limit state |
-| `tsx` | Local CLI/test runner |
-
-## 17.4 File map
-
-```text
-bb-pm-tools/src/
-├── index.ts              # OpenClaw plugin entry, register HTTP routes
-├── webhook.ts            # /agent/run, /agent/metrics, /health handlers
-├── orchestrator.ts       # Main ReAct loop, prompt, memory, tool invocation
-├── tools.ts              # Tool catalog + tool handlers
-├── api-client.ts         # Typed-ish client to bb-pm API
-├── llm.ts                # OpenAI-compatible chat client + retries
-├── config.ts             # Env parsing
-├── pre-classifier.ts     # Fast-path intent classifier
-├── formatter.ts          # Chat reply formatter/cleanup
-├── channel-out.ts        # Outbound to gapo-agent/browser-tools
-├── memory.ts             # Recall + summarize conversation memory
-├── scheduler.ts          # Cron, DB automation sync, audit cleanup
-├── workflows/registry.ts # Named workflow registry
-├── rate-limit.ts         # /agent/run rate limit
-├── dedup.ts              # Duplicate message protection
-├── concurrency.ts        # In-flight slot limiter
-├── cooldown.ts           # Follow-up cooldown
-├── redis.ts              # Redis adapter/fallback
-├── meeting.ts            # Transcript -> meeting/action items
-├── nl-to-sql.ts          # Natural language report query support
-├── prompt-v2.ts          # New READ/ACTION/AUTOMATION prompt builder
-└── types.ts              # AgentContext, trace types
-```
-
-## 17.5 Registered OpenClaw routes
-
-`src/index.ts` registers three plugin-owned routes:
-
-| Route | Method | Auth | Purpose |
-|---|---|---|---|
-| `/api/plugins/bb-pm/agent/run` | POST | plugin | Main channel-agnostic agent entry |
-| `/api/plugins/bb-pm/agent/metrics` | GET | plugin | Runtime concurrency/counter metrics |
-| `/api/plugins/bb-pm/health` | GET | plugin | Liveness/readiness check |
-
-OpenClaw route registration:
-
-```ts
-api.registerHttpRoute({
-  path: "/api/plugins/bb-pm/agent/run",
-  auth: "plugin",
-  match: "exact",
-  handler: handleAgentRun,
-});
-```
-
-WHY channel-agnostic `/agent/run`:
-
-- Gapo, Slack, Telegram, CLI hoặc future adapters có thể gửi cùng một request shape.
-- Orchestrator không cần biết inbound channel payload gốc.
-- Channel plugin chỉ chịu trách nhiệm parse inbound và deliver outbound.
-
-Request:
-
-```json
-{
-  "text": "[GAPO_USER: Nguyen Van A] task nào quá hạn?",
-  "conversationId": "gapo:123456",
-  "correlationId": "gapo-123456-1715000000000",
-  "source": "chat"
-}
-```
-
-Response:
-
-```json
-{
-  "reply": "Có 3 task quá hạn: WS-3 · API auth · QA checklist",
-  "requestId": "req_xxx"
-}
-```
-
-## 17.6 AgentContext
-
-`src/types.ts`:
-
-```ts
-export type AgentContext = {
-  source?: "chat" | "cron" | "cli" | "other" | "eval";
-  correlationId?: string;
-  conversationId?: string;
-  callerUserId?: number;
-  trace?: { toolCalls: AgentToolTrace[] };
-};
-```
-
-Semantics:
-
-| Field | Ý nghĩa |
-|---|---|
-| `source` | Nguồn chạy: chat/cron/cli/eval |
-| `correlationId` | ID mỗi turn để nối audit/log |
-| `conversationId` | ID ổn định theo thread, dùng memory/dedup |
-| `callerUserId` | bb-pm user đã map từ Gapo conversation |
-| `trace` | Dùng trong eval/tests để biết tool nào được gọi |
-
-Convention quan trọng:
-
-```text
-conversationId = "gapo:<numeric_thread_id>"
-```
-
-Orchestrator dùng convention này để:
-
-- Resolve caller từ `bb-pm` qua channel identity.
-- Group memory theo conversation.
-- Gửi quick acknowledgement về đúng Gapo thread nếu LLM chậm.
-
-## 17.7 Request handling flow trong `webhook.ts`
-
-```mermaid
-flowchart TD
-  A[POST /api/plugins/bb-pm/agent/run] --> B[Parse JSON body]
-  B --> C[Validate text]
-  C --> D[Generate/propagate requestId]
-  D --> E[Rate limit by correlationId or IP]
-  E --> F{Duplicate chat message?}
-  F -- Yes --> G[Return empty reply silent=true]
-  F -- No --> H{Check-in or action session?}
-  H -- Yes --> I[Execute deterministic state machine]
-  I --> J[Return reply]
-  H -- No --> K{Fast-path possible?}
-  K -- Yes --> L[Execute fast-path without LLM slot]
-  L --> J
-  K -- No --> M{Read query?}
-  M -- Yes --> N[Text-to-SQL / report.query]
-  N --> J
-  M -- No --> O[Acquire concurrency slot]
-  O --> P[runAgent ReAct]
-  P --> Q[Format response]
-  Q --> R[Strip markdown for Gapo]
-  R --> J
-```
-
-Important operational decisions:
-
-- Check-in/action sessions run before generic fast-path so follow-up turns like "ok" or a bare project name stay in the active workflow.
-- Fast-path runs before concurrency slot because it does not need LLM.
-- Duplicate chat messages return empty reply so channel watcher does not spam user.
-- Concurrency limiter protects slow/self-hosted LLM from burst overload.
-- Formatter is fail-safe: if formatting fails, raw reply is still returned.
-
-## 17.8 Orchestrator flow
-
-`src/orchestrator.ts` implements a ReAct/function-calling loop:
-
-```mermaid
-sequenceDiagram
-  participant Ch as Channel Plugin
-  participant Run as bb-pm-tools /agent/run
-  participant Orch as runAgent
-  participant LLM as LLM Provider
-  participant Tool as Tool Handler
-  participant API as bb-pm API
-  participant Audit as agent_audit_log
-
-  Ch->>Run: { text, conversationId, correlationId }
-  Run->>Orch: runAgent(text, ctx)
-  Orch->>API: resolve caller by Gapo cid
-  Orch->>Orch: tryFastPath()
-  Orch->>API: recall memory
-  Orch->>LLM: chat(system prompt + tools)
-  LLM-->>Orch: tool_calls
-  Orch->>Tool: invokeTool(name,args)
-  Tool->>API: HTTP X-Agent-Token
-  API-->>Tool: data
-  Orch->>Audit: postAudit(tool,args,result summary)
-  Orch->>LLM: tool results
-  LLM-->>Orch: final Vietnamese reply
-  Orch->>API: summarize/store memory async
-  Orch-->>Run: reply
-  Run-->>Ch: { reply }
-```
-
-## 17.9 Prompt versions
-
-Env:
-
-```env
-BB_PM_PROMPT_VERSION=v1
-# or
-BB_PM_PROMPT_VERSION=v2
-```
-
-Current behavior:
-
-| Version | Description |
-|---|---|
-| `v1` | Large system prompt with detailed tool-specific operating rules |
-| `v2` | Prompt builder with 3-mode dispatcher: READ, ACTION, AUTOMATION |
-
-WHY keep both:
-
-- v1 is stable and explicit for current workflows.
-- v2 enables cleaner intent separation and can include schema docs.
-- Rollout can be controlled by env without redeploying API.
-
-## 17.10 Tool catalog
-
-`src/tools.ts` exposes legacy tools and newer namespaced tools.
-
-Observed tools include:
-
-| Category | Tools |
-|---|---|
-| Read/observe | `list_overdue_tasks`, `list_stale_tasks`, `check_data_hygiene`, `generate_daily_digest`, `get_project_snapshot`, `list_blocked_tasks`, `generate_weekly_report` |
-| Lookup/search | `find_project`, `find_task`, `find_user`, `search_tasks`, `search_projects`, `gapo.find_user` |
-| Task actions | `task.create`, `task.update`, `task.report_blocker`, `tasks.bulk_update` |
-| Legacy task actions | `get_task_owner`, `update_task_status`, `assign_task`, `create_action_item`, `post_blocker` |
-| Project actions | `project.create`, `project.update`, legacy `create_project` |
-| Messaging | `message.send`, `messages.broadcast`, legacy `send_follow_up`, `send_dm_to_gapo_user` |
-| Follow-up | `list_pending_follow_ups`, `follow_up.update`, legacy `mark_follow_up_replied` |
-| Meeting | `ingest_meeting`, `approve_meeting_items` |
-| Reporting | `report.query`, `recall_memory` |
-| Automation | `automation.create`, `automation.list`, `automation.delete`, `workflow.run` |
-
-Maintainability note:
-
-- Prefer namespaced tools for new prompt/workflow: `task.update`, `project.create`, `message.send`.
-- Keep legacy tools until prompt/eval no longer depends on them.
-- Do not remove a tool without checking prompt text, eval tests, and historical memory summaries.
-
-## 17.11 Tool invocation and audit
-
-Every tool call goes through `invokeTool()`:
-
-1. Parse JSON arguments.
-2. Find tool in `toolsByName`.
-3. Execute handler.
-4. Push trace if `ctx.trace` exists.
-5. Fire-and-forget audit to BB-PM:
-
-```http
-POST /api/v1/agent/audit
-X-Agent-Token: <BB_PM_AGENT_TOKEN>
-```
-
-Audit intentionally stores summarized result:
-
-- Array -> `{ length }`
-- Object -> key count
-- Scalars -> raw value
-
-WHY summarize:
-
-- Avoid storing huge task lists.
-- Reduce PII/data leakage in audit.
-- Keep `agent_audit_log` small enough for retention cleanup.
-
-## 17.12 LLM provider layer
-
-`src/llm.ts` calls OpenAI-compatible `/chat/completions`.
-
-Providers from `src/config.ts`:
-
-| Provider | Env prefix | Default |
-|---|---|---|
-| `default` | `LLM_*` | `http://localhost:8000/v1`, model `gemma-4` |
-| `gemini` | `GEMINI_*` | `gemini-2.5-flash` via OpenAI-compatible endpoint |
-| `openrouter` | `OPENROUTER_*` | `openai/gpt-4o` |
-
-Selection:
-
-```env
-LLM_PROVIDER=default
-LLM_PROVIDER=gemini
-LLM_PROVIDER=openrouter
-```
-
-Behavior:
-
-- Adds `tools` and `tool_choice: auto` when tools are provided.
-- Retries transient network/5xx LLM failures up to 2 times.
-- Annotates response with latency/provider/model.
-
-Important caveat:
-
-Self-hosted models must expose OpenAI-compatible `tool_calls`. If the server returns only text with pseudo tool JSON, the orchestrator will not execute tools correctly.
-
-## 17.13 Fast-path classifier
-
-`src/pre-classifier.ts` handles common intents without LLM:
-
-- End-session acknowledgements.
-- "task của tôi".
-- Role/status/count queries.
-- Overdue/digest/weekly/list automation style queries.
-
-WHY:
-
-- LLM can take 60-180s under load.
-- Many user messages are deterministic DB lookups.
-- Fast-path avoids queue/concurrency slot.
-- Better UX and lower cost.
-
-Rule of thumb:
-
-- Add fast-path only for high-confidence, deterministic, frequent queries.
-- Do not fast-path ambiguous action commands that need confirmation.
-
-## 17.14 Concurrency, rate limit, dedup
-
-| Component | Purpose |
-|---|---|
-| `rate-limit.ts` | Limit `/agent/run` per correlation/IP window |
-| `dedup.ts` | Stop duplicate messages from retries/resends |
-| `concurrency.ts` | Cap in-flight LLM turns and queue depth |
-| `cooldown.ts` | Avoid repeated follow-up pings |
-| `redis.ts` | Redis-backed state when available, in-process fallback otherwise |
-
-WHY these exist:
-
-- Chat systems retry webhooks.
-- Users resend when a bot is slow.
-- Self-hosted LLM can be easily overloaded.
-- Follow-up automation can accidentally ping the same user repeatedly.
-
-## 17.15 Scheduler and automations
-
-`src/scheduler.ts` supports three scheduling modes:
-
-1. Legacy env cron jobs:
-   - `CRON_DAILY_DIGEST`
-   - `CRON_DAILY_DIGEST_TARGET`
-   - `CRON_WEEKLY_HYGIENE`
-   - `CRON_WEEKLY_HYGIENE_TARGET`
-
-2. DB-backed automations from BB-PM `Automation` table:
-   - Polls API every `AUTOMATION_POLL_MS` ms, default 60s.
-   - Registers active rows dynamically.
-   - Re-registers when schedule/workflow/target changes.
-   - Stops jobs removed or disabled in DB.
-   - Dead-man switch after 3 consecutive failures.
-
-3. Audit retention cron:
-   - `AUDIT_RETENTION_DAYS`, default 90.
-   - `AUDIT_CLEANUP_SCHEDULE`, default `0 3 * * *`.
-
-DB automation lifecycle:
-
-```mermaid
-flowchart TD
-  A[BB-PM Automation row active=true] --> B[bb-pm-tools poll /agent/automations]
-  B --> C[Register node-cron task]
-  C --> D[Cron fires]
-  D --> E[runWorkflow]
-  E --> F{ok?}
-  F -- yes --> G[Patch lastRunStatus=ok consecutiveFails=0]
-  F -- no --> H[Patch lastRunStatus=error consecutiveFails+1]
-  H --> I{fails >= 3?}
-  I -- yes --> J[Dead-man skip/unregister]
-```
-
-## 17.16 Workflow registry
-
-`src/workflows/registry.ts` contains named workflows:
-
-| Workflow | Purpose |
-|---|---|
-| `daily_digest` | Fetch `/projects/digest`, format Vietnamese digest, send to target |
-| `weekly_report` | Fetch `/projects/weekly-report`, format weekly report, send |
-| `hygiene_check` | Fetch `/tasks/hygiene`, summarize data hygiene issues, send |
-
-WHY workflows do not call LLM:
-
-- Scheduled outputs should be deterministic.
-- Cron should not fail because LLM is slow.
-- Workflows are easier to test and reason about.
-- Manual `workflow.run` can execute same logic as scheduler.
-
-## 17.17 Memory
-
-`src/memory.ts` provides:
-
-- `recallMemoryContext()` before LLM prompt.
-- `summarizeAndStore()` after reply, fire-and-forget.
-- `recordRecentTurn()` in-memory recent context for immediate follow-up.
-
-Storage is in BB-PM API/DB through `agent_memory`.
-
-WHY:
-
-- Agent can answer follow-up questions like "vụ đó sao rồi?".
-- Conversation context can survive process restarts through DB summary.
-- In-memory recent turn avoids race where DB summary has not been written yet.
-
-## 17.18 Outbound channel strategy
-
-`bb-pm-tools` should not hold direct Gapo credentials for normal outbound. It sends through `gapo-agent`:
-
-```text
-bb-pm-tools -> POST /api/plugins/gapo-agent/send -> Gapo API
-```
-
-Config:
-
-```env
-GAPO_SEND_URL=http://localhost:18789/api/plugins/gapo-agent/send
-GAPO_SEND_TOKEN=<shared secret>
-```
-
-Fallback browser tools exist for DM discovery/opening:
-
-```env
-BROWSER_TOOLS_SEND_URL=http://localhost:18789/api/plugins/browser-tools/send-dm
-BROWSER_TOOLS_FIND_URL=http://localhost:18789/api/plugins/browser-tools/find-user
-BROWSER_TOOLS_FIND_AND_OPEN_DM_URL=http://localhost:18789/api/plugins/browser-tools/find-and-open-dm
-BROWSER_TOOLS_TOKEN=<token>
-```
-
-## 17.19 Important env variables
-
-| Env | Required | Purpose |
-|---|---|---|
-| `BB_PM_API_URL` | Yes | BB-PM API base, default `http://localhost:4000/api/v1` |
-| `BB_PM_AGENT_TOKEN` | Yes | Sent as `X-Agent-Token` to BB-PM |
-| `LLM_PROVIDER` | No | `default`, `gemini`, `openrouter` |
-| `LLM_BASE_URL` | If default provider | OpenAI-compatible base |
-| `LLM_API_KEY` | Depends | API key for default provider |
-| `LLM_MODEL` | No | Default provider model |
-| `GEMINI_API_KEY` | If provider gemini | Gemini auth |
-| `OPENROUTER_API_KEY` | If provider openrouter | OpenRouter auth |
-| `GAPO_SEND_URL` | For outbound | gapo-agent send endpoint |
-| `GAPO_SEND_TOKEN` | For outbound/cron | Shared secret to gapo-agent |
-| `REDIS_URL` | Optional | Distributed rate/cooldown |
-| `FOLLOW_UP_COOLDOWN_SEC` | Optional | Follow-up cooldown, default 24h |
-| `AGENT_RUN_MAX_PER_WINDOW` | Optional | Rate limit max |
-| `AGENT_RUN_WINDOW_SEC` | Optional | Rate limit window |
-| `AGENT_MAX_STEPS` | Optional | Max ReAct tool steps |
-| `BB_PM_PROMPT_VERSION` | Optional | `v1` or `v2` |
-| `AUTOMATION_POLL_MS` | Optional | DB automation poll interval |
-| `AUDIT_RETENTION_DAYS` | Optional | Audit cleanup retention |
-
-## 17.20 Local smoke tests
-
-From `/home/bbsw/pm/bb-pm-tools`:
-
-```bash
-pnpm install
-pnpm build
-
-pnpm cli "task nào đang quá hạn?"
-pnpm cli --digest
-pnpm cli --hygiene
-pnpm cli --stale
-```
-
-Direct HTTP:
-
-```bash
-curl -s -X POST http://localhost:18789/api/plugins/bb-pm/agent/run \
-  -H 'content-type: application/json' \
-  -d '{
-    "text": "task nào quá hạn?",
-    "conversationId": "gapo:123",
-    "correlationId": "manual-test-1",
-    "source": "chat"
-  }'
-```
-
-Metrics:
-
-```bash
-curl -s http://localhost:18789/api/plugins/bb-pm/agent/metrics
-```
-
-Health:
-
-```bash
-curl -s http://localhost:18789/api/plugins/bb-pm/health
-```
-
-## 17.21 Debugging bb-pm-tools
-
-| Symptom | Likely cause | Check |
-|---|---|---|
-| `Missing env: BB_PM_AGENT_TOKEN` | Plugin cannot auth to BB-PM | `.env`, `config.ts`, BB-PM `AGENT_API_TOKEN` |
-| LLM returns text but no tools execute | Model server not emitting OpenAI `tool_calls` | Curl `/chat/completions` with tools |
-| Slow replies | LLM saturated, no fast-path, queue full | `/agent/metrics`, logs, `AGENT_MAX_STEPS` |
-| Duplicate replies | Channel retry/dedup mismatch | `conversationId`, `dedup.ts`, gapo-agent ack-fast |
-| No scheduled digest | Missing target/token or invalid cron | `CRON_*`, `GAPO_SEND_TOKEN`, scheduler logs |
-| Follow-up spam | Redis unavailable or cooldown not shared | `REDIS_URL`, `FOLLOW_UP_COOLDOWN_SEC` |
-| Agent knows no caller | Missing `ChannelIdentity` mapping | BB-PM `/api/v1/agent/user-by-channel` |
+Mỗi tầng 4–8 trả `None` nếu không xử lý → pipeline rơi xuống tầng kế tiếp. Tầng nào trả
+kết quả thì dừng.
 
 ---
 
-# 18. OpenClaw Integration Deep Dive
+## 17.3 `core/` — cấu hình, log, DI
 
-## 18.1 OpenClaw là gì trong hệ thống này
+### `core/config.py`
 
-OpenClaw là local-first AI gateway/plugin host. Trong kiến trúc BB-PM, OpenClaw không phải database và không phải PM domain API.
+Tải toàn bộ cấu hình từ environment (có nạp `.env` nếu có). Thay thế cơ chế nạp env
+per-plugin của OpenClaw.
 
-Vai trò chính:
+**Hàm helper đọc env:**
 
-- Load plugin `bb-pm-tools`.
-- Load channel plugin như `gapo-agent`.
-- Expose plugin HTTP routes dưới `/api/plugins/...`.
-- Cung cấp gateway process chạy lâu dài.
-- Cho phép các channel adapter và orchestrator giao tiếp trong cùng gateway.
-
-## 18.2 Boundary rõ ràng
-
-```mermaid
-flowchart LR
-  GW[OpenClaw Gateway] --> GP[gapo-agent plugin]
-  GW --> BP[bb-pm-tools plugin]
-  GP -->|POST /agent/run| BP
-  BP -->|X-Agent-Token| API[bb-pm API]
-  API --> DB[(PostgreSQL)]
-  BP -->|POST /gapo-agent/send| GP
-  GP --> Gapo[Gapo Work API]
-```
-
-Responsibility split:
-
-| Layer | Owns | Does not own |
-|---|---|---|
-| `bb-pm` | PM data, business rules, RBAC, migrations | LLM prompts, channel webhooks |
-| `bb-pm-tools` | Orchestration, tools, LLM, workflows, memory, audit | Raw Gapo payload parsing, browser UI |
-| `gapo-agent` | Gapo webhook parse/send | PM logic, DB query, intent routing |
-| OpenClaw gateway | Plugin loading/routing/runtime | BB-PM business domain |
-
-## 18.3 OpenClaw plugin contract used here
-
-Both `bb-pm-tools` and `gapo-agent` expose:
-
-```ts
-export function register(api: any) {
-  api.registerHttpRoute({
-    path: "...",
-    auth: "plugin",
-    match: "exact",
-    handler,
-  });
-}
-```
-
-WHY `registerHttpRoute`:
-
-- Plugin owns a route namespace.
-- Gateway can dispatch incoming HTTP request to plugin.
-- Plugin handler works with raw Node `IncomingMessage` / `ServerResponse`.
-- The same gateway can host multiple plugins without each plugin running its own HTTP server.
-
-## 18.4 gapo-agent plugin
-
-Location:
-
-```text
-gapo-agent/
-```
-
-Files:
-
-| File | Role |
+| Hàm | Mô tả |
 |---|---|
-| `index.ts` | Register webhook/send routes |
-| `webhook.ts` | Receive Gapo inbound, normalize, forward to bb-pm-tools |
-| `send.ts` | Authenticated outbound send endpoint |
-| `client.ts` | Gapo API client |
-| `config.ts` | Load config from file/env |
-| `openclaw.plugin.json` | Plugin metadata |
+| `_env(*names, default="")` | Trả giá trị env đầu tiên không rỗng trong danh sách `names` |
+| `_int(*names, default)` | Như `_env` nhưng ép `int`, lỗi → `default` |
+| `_float(*names, default)` | Như `_env` nhưng ép `float` |
+| `_bool(*names, default=False)` | True nếu giá trị ∈ `{1,true,yes,on}` |
 
-Registered routes:
+**Hằng:** `LLM_PROVIDERS = ("default", "gemini", "openrouter", "9router")`.
 
-| Route | Method | Purpose |
+**Pydantic models (cấu trúc cấu hình):**
+
+| Model | Field chính |
+|---|---|
+| `LlmProviderConfig` | `base_url, api_key, model, max_tokens, temperature` |
+| `LlmConfig` | `requested_provider, active_provider, providers: dict`; property `.active` trả `LlmProviderConfig` đang dùng |
+| `BbPmConfig` | `base_url, agent_token` |
+| `GapoConfig` | `api_url, bot_token, bot_id, auth_header, auth_prefix, dry_run, send_token, webhook_path, send_path` |
+| `RedisConfig` | `url, follow_up_cooldown_sec` |
+| `RateLimitConfig` | `max_per_window` (30), `window_sec` (60) |
+| `ConcurrencyConfig` | `max_concurrent` (16), `max_queue` (30), `acquire_timeout_ms` (60000) |
+| `CronJob` | `schedule, target` |
+| `CronConfig` | `timezone, daily_digest, weekly_hygiene, noon_checkin, eod_checkin, missing_checkin_followup, checkin_enabled, audit_retention_days, audit_cleanup_schedule, automation_poll_sec` |
+| `Settings` | gộp tất cả + `admin_alert_target, checkin_session_ttl_sec, dedup_ttl_sec, caller_cache_ttl_sec, action_pending_ttl_sec, port, io_log_enabled, io_log_max_chars` |
+
+**Hàm:**
+
+- `_llm_config()` — dựng `LlmConfig` cho 4 provider; `9router` đọc cả `9ROUTER_*` lẫn `NINE_ROUTER_*`.
+- `load_settings()` — dựng `Settings` đầy đủ từ env. Chú ý: các TTL trong env tính bằng **ms**, được chia 1000 thành **giây**.
+- `assert_config(settings) -> list[str]` — trả danh sách key thiếu/sai (cảnh báo, không fatal): `LLM_PROVIDER` hợp lệ, `BB_PM_AGENT_TOKEN`, API key của provider, `GAPO_SEND_TOKEN` nếu cron bật.
+
+**Biến module:** `settings = load_settings()` — singleton dùng toàn project.
+
+### `core/logging.py`
+
+Log JSON một dòng, có cắt ngắn — thay `channelLog`/`webhookLog` của bản TS.
+
+| Thành phần | Mô tả |
+|---|---|
+| `_LOGGER` | `logging.Logger("pm_agent")` |
+| `configure_logging(level="INFO")` | Gắn `StreamHandler` ra stdout, format `%(message)s` |
+| `_truncate(value, max_chars)` | Cắt chuỗi, thêm `…[truncated N chars]` |
+| `log_event(event, level="info", **fields)` | Xuất 1 dòng JSON `{ts, event, ...fields}`, cắt theo `io_log_max_chars` |
+| `log_io(event, **fields)` | Như `log_event` nhưng bị tắt nếu `io_log_enabled=False` |
+
+### `core/deps.py`
+
+DI container — các singleton dựng 1 lần lúc startup.
+
+**Class `Container`** — thuộc tính: `bbpm, llm, gapo_client, gapo_handler, catalog, checkin, orchestrator, registry, scheduler, redis`.
+
+| Method | Mô tả |
+|---|---|
+| `run_turn(request: TurnRequest) -> TurnReply` | Entry point channel-agnostic; uỷ thác `orchestrator.handle()`; trả thông báo tạm nếu orchestrator chưa sẵn sàng |
+| `startup()` | Dựng tuần tự: `BbPmClient`, `LlmClient`, `ToolCatalog`, `CheckinService`, `FastPathRouter`, `ActionRouter`, `NlToSqlTranslator`, `ReadRouter`, `Orchestrator`, `GapoClient`, `GapoHandler`; connect Redis; dựng `WorkflowRegistry` + `AgentScheduler` rồi `scheduler.start()` |
+| `shutdown()` | Dừng scheduler, đóng các client + Redis |
+
+**Biến module:** `container = Container()`.
+
+---
+
+## 17.4 `infrastructure/` — client ngoài
+
+### `infrastructure/bbpm_client.py`
+
+Client gọi bb-pm API. Mọi đọc/ghi nghiệp vụ đi qua đây — agent không chạm Postgres.
+
+- `_params(**kwargs)` — bỏ các giá trị `None` để query param tuỳ chọn không bị gửi.
+- `BbPmApiError(status, body)` — exception khi API trả ≥ 400.
+- `BbPmClient`:
+  - `__init__` — tạo `httpx.AsyncClient` base_url = `settings.bb_pm.base_url`, header `X-Agent-Token`.
+  - `request(method, path, **kwargs)` — gọi HTTP, raise `BbPmApiError` nếu ≥ 400, trả JSON envelope.
+  - `_data(method, path, **kwargs)` — như `request` nhưng trả thẳng `data` trong envelope `{success, data}`.
+  - **~45 method nghiệp vụ** (mỗi method gói 1 endpoint bb-pm API):
+
+| Nhóm | Method |
+|---|---|
+| Tasks | `list_tasks, get_task, list_overdue_tasks, list_stale_tasks, check_hygiene, transition_task, create_task, patch_task, create_blocker` |
+| Projects | `get_project, list_projects, create_project, patch_project, digest, weekly_report` |
+| Users | `list_users, users_workload, user_by_channel, gapo_thread` |
+| Digest | `role_based_digest` |
+| Audit | `post_audit, cleanup_audit` |
+| Automation | `list_automations, create_automation, patch_automation, delete_automation` |
+| Check-in | `import_checkin, update_checkin, checkin_projects, checkin_status, missing_checkins, project_daily_summary` |
+| Check-in session | `start_checkin_session, current_checkin_session, patch_checkin_session, complete_checkin_session` |
+| Memory | `post_memory, search_memory` |
+| Follow-up | `post_follow_up, list_follow_ups, patch_follow_up` |
+| Channel identity | `channel_identity, upsert_channel_identity` |
+| Reporting | `report_schema, report_query` |
+
+### `infrastructure/llm_client.py`
+
+Client LLM OpenAI-compatible đa provider.
+
+| Thành phần | Mô tả |
+|---|---|
+| `LlmTransientError` | Lỗi tạm thời, được retry (5xx, mất kết nối) |
+| `LlmError` | Lỗi không retry (4xx, response sai định dạng) |
+| `ChatResponse` | Slots: `content, tool_calls, finish_reason, usage, latency_ms, provider, model` |
+| `_RETRYABLE` | Tuple exception được retry: `ConnectError, ConnectTimeout, ReadTimeout, RemoteProtocolError, LlmTransientError` |
+| `LlmClient._client(provider, cfg)` | Tạo/cache `httpx.AsyncClient` cho từng provider, timeout 330s |
+| `LlmClient.chat(messages, tools=None, *, provider, max_tokens, temperature, response_format)` | Hàm chính — dựng body, gọi `_chat_with_retry` |
+| `LlmClient._chat_with_retry(...)` | Bọc `@tenacity.retry` (3 lần, backoff luỹ thừa); 5xx → `LlmTransientError`, 4xx → `LlmError` |
+| `LlmClient.close()` | Đóng mọi httpx client |
+
+### `infrastructure/redis.py`
+
+Wrapper Redis async. Nếu `REDIS_URL` rỗng hoặc không kết nối được → `client = None`,
+caller tự fallback in-memory.
+
+- `RedisClient(url)`: property `client` (Optional), `available` (bool); `connect()` ping thử; `close()`.
+- Biến module: `redis_client = RedisClient(settings.redis.url)`.
+
+---
+
+## 17.5 `shared/` — kiểu dùng chung & text
+
+### `shared/types.py` — contract channel ↔ orchestrator
+
+Orchestrator **không import** package channel; channel tự dịch payload sang/từ các kiểu này.
+
+| Model | Field |
+|---|---|
+| `ReplyOption` | `title, payload` |
+| `ReplyBody` | `kind: "text"|"quick_replies", text, options: list[ReplyOption]` |
+| `TurnRequest` | `text, source, conversation_id, external_id, correlation_id, event_type, metadata, skip_channel_ack, caller_user_id` |
+| `TurnReply` | `reply, channel_reply, request_id, pattern, mode, dedup, silent` |
+
+`TurnSource = Literal["chat", "cron", "cli", "eval"]`.
+
+### `shared/text.py` — helper tiếng Việt
+
+| Hàm | Mô tả |
+|---|---|
+| `normalize(text)` | Lowercase, bỏ dấu (NFD + xoá combining marks), `đ→d`, gộp về chữ-số. Dùng cho fuzzy match tên/lệnh |
+| `nfc(text)` | Chuẩn hoá NFC (Gapo có thể gửi NFD) |
+| `strip_markdown_for_gapo(text)` | Bỏ marker markdown Gapo không render (`**bold**`, `` `code` ``, fenced block, header, `#123`); giữ `*italic*` |
+
+---
+
+## 17.6 `channel/` — adapter GapoWork
+
+### `channel/base.py`
+
+- `TurnHandler` — type alias `Callable[[TurnRequest], Awaitable[TurnReply]]`.
+- `ChannelAdapter` — Protocol để mở đường thêm Slack/Telegram sau này.
+
+### `channel/gapo/models.py`
+
+| Model | Mô tả |
+|---|---|
+| `Mention` | `target, length, offset` |
+| `GapoNormalizedEvent` | Payload Gapo đã chuẩn hoá: `event_type, text, conversation_id, external_id, from_user_id, thread_id, to_bot_id, message_id, message_type, payload, mentions, is_group_message, sender_name, correlation_id, should_process` |
+| `QuickReplyOption` | `title, payload` |
+| `TextBody` | `type="text", text, is_markdown_text` |
+| `QuickRepliesBody` | `type="quick_replies", text, options`; method `to_gapo()` dựng dict đúng format Gapo |
+| `GapoSendResult` | `sent, conversation_id, response, status_code, message` |
+
+### `channel/gapo/normalizer.py`
+
+Chuẩn hoá payload webhook Gapo. Port nguyên `gapo-agent/src/normalizer.ts`.
+
+| Hàm | Mô tả |
+|---|---|
+| `dig(value, *keys)` | Truy cập lồng nhau an toàn |
+| `first_string(*values)` | Trả chuỗi/số đầu tiên không rỗng |
+| `strip_gapo_prefix(value)` | Bỏ tiền tố `gapo:` |
+| `ensure_gapo_prefix(value)` | Thêm `gapo:` nếu thiếu |
+| `_normalize_mentions(value)` | Parse mảng mention |
+| `normalize_gapo_payload(payload) -> GapoNormalizedEvent` | Hàm chính |
+
+**`should_process`** = True khi: `event_type` rỗng hoặc `message_created`; `message_type` ∈ `{text, quick_reply, menu}`; nếu là group message thì phải có lệnh `/` hoặc @mention bot hoặc type `quick_reply/menu`; và text không rỗng. Hằng `_PROCESSABLE_TYPES = {"text","quick_reply","menu"}`.
+
+### `channel/gapo/client.py`
+
+Gửi tin qua Gapo Bot API.
+
+| Hàm | Mô tả |
+|---|---|
+| `build_text_body(text)` | Dựng `TextBody` |
+| `build_quick_replies_body(text, options)` | Dựng `QuickRepliesBody` |
+| `build_mention_text_body(text, mention_name, target_user_id)` | Dựng text có mention |
+| `build_quick_reply_fallback_text(body)` | Text dạng số khi channel không render được nút |
+| `parse_conversation_target(value)` | `dm:<id>`→`{receiver_id}`, `collab:<id>`→`{collab_id}`, còn lại→`{thread_id}` |
+| `GapoClient.build_request(conversation_id, body)` | Dựng body request gửi Gapo (kèm `bot_id`) |
+| `GapoClient.send(conversation_id, body=None, *, text="")` | Gửi tin; nếu `GAPO_DRY_RUN=true` chỉ log không gọi API thật |
+
+### `channel/gapo/handler.py`
+
+`GapoHandler` — xử lý webhook + gửi tin. Thay `gapo-agent/src/index.ts`.
+
+Hằng `_EVENT_DEDUP_TTL_SEC = 300` (dedup event 5 phút).
+
+| Method | Mô tả |
+|---|---|
+| `__init__(client, turn_handler)` | Lưu `GapoClient` + callback orchestrator; khởi tạo `counters` |
+| `_is_duplicate_event(event_id)` | Dedup theo `payload["id"]`, TTL 5 phút |
+| `handle_webhook(payload) -> dict` | Normalize → dedup → `should_process` → gọi `turn_handler` → `_deliver` |
+| `_to_turn_request(ev)` | Dịch `GapoNormalizedEvent` → `TurnRequest` |
+| `_deliver(normalized, reply)` | Dựng outbound body từ `TurnReply`, gửi; nếu quick_replies fail → fallback text |
+| `handle_send(conversation_id, text, body=None)` | Cho route `/send` (workflow gửi chủ động) |
+| `health()` | Trả `counters` |
+| `_reply_to_body(reply)` (hàm module) | `TurnReply` → `TextBody`/`QuickRepliesBody` |
+
+`counters`: `webhook_received, webhook_processed, webhook_ignored, webhook_failed, send_succeeded, send_failed`.
+
+---
+
+## 17.7 `orchestrator/` — pipeline & hạ tầng
+
+### `orchestrator/pipeline.py`
+
+`Orchestrator` — định tuyến 1 turn. Port `bb-pm-tools/src/webhook.ts`.
+
+| Thành phần | Mô tả |
+|---|---|
+| `_SLASH`, `_CHECKIN_CMD` | Regex nhận diện slash command / lệnh check-in |
+| `_NO_MATCH` | Câu trả lời mặc định khi không tầng nào bắt |
+| `Orchestrator.handle(request) -> TurnReply` | Chạy pipeline 8 bước (xem 17.2) |
+| `Orchestrator._done(...)` | Đóng gói `TurnReply`, ghi telemetry, strip markdown |
+
+Thứ tự: rate-limit (chat) → dedup (chat, non-slash) → resolve caller → check-in (nếu là lệnh check-in hoặc không phải slash) → action → fast-path → NL-read → no_match.
+
+### Các module hạ tầng
+
+| File | Thành phần chính |
+|---|---|
+| `rate_limit.py` | `RateLimitResult`; `check_rate_limit(key)` — token-bucket fixed-window, Redis hoặc `_memory_incr` in-mem; key `cid:`/`conv:` |
+| `dedup.py` | `check_duplicate(conversation_id, text)` — sha256(conv+text), TTL `settings.dedup_ttl_sec`, dict in-mem có lazy GC |
+| `concurrency.py` | `_Metrics`; `acquire_slot()` — async context manager bọc `asyncio.Semaphore(max_concurrent)`; `get_metrics()` |
+| `caller_cache.py` | `resolve_caller(bbpm, external_id, thread_id)` — cache Gapo id → bb-pm user, TTL `caller_cache_ttl_sec` |
+| `cooldown.py` | `is_on_cooldown(scope)`, `set_cooldown(scope, ttl_sec)` — Redis, fallback in-mem |
+| `telemetry.py` | `record_run(mode, total_ms)`, `snapshot()` — counter theo mode |
+
+---
+
+## 17.8 `routing/` — fast-path, action, read
+
+### `routing/fast_path/router.py`
+
+`FastPathRouter` — slash command + pattern tiếng Việt, không gọi LLM (chỉ query DB).
+
+- `HELP_TEXT`, `BLOCKER_HELP` — text tĩnh.
+- `_slash: dict` — map lệnh `/help /mytasks /overdue /stale /blocked /projects /digest /report /weekly /automations` → handler.
+- `_patterns: list[(regex, handler)]` — ~10 pattern tiếng Việt (task quá hạn, task stale, digest, weekly, task của tôi, danh sách dự án, data hygiene, automation, tình hình dự án X, task của [người]).
+- `try_fast_path(text, ctx) -> (reply, pattern) | None` — match slash trước, rồi pattern.
+
+### `routing/action_router.py`
+
+`ActionRouter` — thao tác ghi bằng ngôn ngữ tự nhiên, có bước xác nhận. State `action-pending` lưu Redis (TTL `action_pending_ttl_sec`), fallback in-mem.
+
+| Thành phần | Mô tả |
+|---|---|
+| `_CONFIRM`, `_CANCEL` | Regex nhận "ok"/"hủy" |
+| `_RE_DEADLINE, _RE_STATUS, _RE_CREATE_TASK` | Regex phát hiện ý định |
+| `handle(text, ctx)` | Nếu có pending: confirm→execute, cancel→huỷ; nếu không: `_detect` → lưu pending → trả preview |
+| `_detect(text)` | Trả `(action, preview)` cho 3 loại: đổi deadline, đổi status, tạo task |
+| `_execute(action)` | Gọi `ToolCatalog` thực thi |
+| `_get/_set/_clear_pending` | Quản lý pending state |
+| `_resolve_status(raw)` (hàm module) | Map từ khoá → `TaskStatus` |
+
+### `routing/read_router.py`
+
+| Thành phần | Mô tả |
+|---|---|
+| `classify_read_turn(text) -> "read"|"action"|"ambiguous"|"other"` | Phân loại bằng marker (action verb, read verb, entity, status, ranking, question) |
+| `ReadRouter.try_read(text, ctx, company_id)` | Nếu `ambiguous` → hỏi lại; nếu `read` → gọi `NlToSqlTranslator.run()` |
+
+---
+
+## 17.9 `checkin/` — state machine check-in
+
+### `checkin/models.py`
+
+`ParsedBlocker` (`description, severity`), `ParsedCheckin` (`work_date, summary, hours, status, blocker, task_hint, needs_clarification, clarification_question`), `CheckinTurnResult` (`reply, channel_reply, pattern`).
+
+### `checkin/parser.py`
+
+Parse nội dung worklog: gọi LLM (temp 0) + regex fallback. Port `parseCheckin` từ TS.
+
+| Hàm | Mô tả |
+|---|---|
+| `parse_checkin(text, llm) -> (ParsedCheckin, used_llm)` | Hàm chính; lỗi LLM → fallback regex |
+| `regex_fallback(text)` | Trích giờ/status/blocker bằng regex |
+| `extract_hours(text)` | Nhiều pattern: "2h30p", "nửa giờ", "9h-11h", "từ 9h đến bây giờ" |
+| `_relative_now_range / has_relative_now_range` | Parse khoảng "từ Xh đến bây giờ" theo giờ HCM |
+| `_to_minutes, _hanoi_minutes` | Helper thời gian, timezone `Asia/Ho_Chi_Minh` |
+| `_normalize_parsed(payload, fallback)` | Hợp nhất output LLM với fallback |
+
+### `checkin/service.py`
+
+`CheckinService` — state machine. State: `IDLE → AWAITING_PROJECT → AWAITING_UPDATE → (AWAITING_TASK_CONFIRM) → COMPLETED`. Session lưu qua bb-pm API (`checkin-sessions`).
+
+| Method | Mô tả |
+|---|---|
+| `handle_turn(text, ctx) -> CheckinTurnResult | None` | Entry point; nhận diện lệnh start/edit/cancel, payload quick-reply, rồi rẽ theo state |
+| `build_project_selection_reply(user_id)` | Dựng `ReplyBody` quick_replies (top 3 project) — cũng dùng cho workflow reminder |
+| `_start_session / _ensure_session / _get_session` | Vòng đời session |
+| `_select_project` | Chốt project → state `AWAITING_UPDATE` |
+| `_complete_with_project / _complete_with_task` | Tạo backlog (`import_checkin`), update status/blocker, đóng session |
+| `_start_edit_session / _select_worklog_to_edit / _update_existing_worklog` | Luồng sửa worklog |
+| `_list_user_projects / _list_project_tasks` | Truy vấn project/task của user |
+| `_audit` | Ghi `agent_audit_log` |
+| telemetry | `counters`, `telemetry_snapshot()`, `record_reminder_metric(kind)` |
+
+Helper module: `_is_worklog_start, _is_worklog_edit, _is_cancel, _select_by_text, _expires_at_iso` (datetime hậu tố `Z`), `_is_expired`...
+
+---
+
+## 17.10 `reporting/nl_to_sql/translator.py`
+
+`NlToSqlTranslator` — dịch câu hỏi tiếng Việt → SQL **chỉ đọc**.
+
+| Thành phần | Mô tả |
+|---|---|
+| `validate_generated_sql(sql, company_id)` | Kiểm: chỉ `SELECT`, không DML/DDL, có scope `company_id` đúng |
+| `extract_tables(sql)` | Trích tên bảng từ `FROM/JOIN` |
+| `_base_rules(company_id, user_id)` | System prompt ràng buộc an toàn |
+| `_parse_json_loose / _parse_sql_payload` | Parse output JSON của LLM (chịu được markdown fence) |
+| `NlToSqlTranslator.run(question, company_id, user_id)` | Dịch → validate → `report_query` → repair 1 lần nếu lỗi → format |
+| `_format_rows(result)` | Render kết quả ra text tiếng Việt |
+
+Hằng `_SCOPED_TABLES` — danh sách bảng bắt buộc scope `company_id`.
+
+---
+
+## 17.11 `tools/` — catalog & format
+
+### `tools/catalog.py`
+
+`ToolCatalog` — gói các thao tác trên bb-pm API. **Query tool** trả text tiếng Việt; **action tool** trả dict.
+
+| Loại | Method |
+|---|---|
+| Query | `my_tasks_today, deadlines_this_week, my_projects, overdue_tasks, stale_tasks, data_hygiene, daily_digest, weekly_report, list_projects, list_automations, project_snapshot, search_tasks, users_workload, person_tasks` |
+| Action | `create_task, transition_task, patch_task, create_project` |
+
+### `tools/format.py`
+
+Render text tiếng Việt: `task_line, task_list, project_list, digest, weekly, hygiene`.
+
+---
+
+## 17.12 `workflows/` — workflow & scheduler
+
+### `workflows/registry.py`
+
+`WorkflowRegistry` — 7 workflow định kỳ. `WorkflowResult` (`ok, message, meta`), `WorkflowContext` (`source, target, correlation_id`).
+
+| Workflow | Mô tả |
+|---|---|
+| `daily_digest` | Digest hôm nay → gửi `ctx.target` |
+| `weekly_report` | Báo cáo tuần |
+| `hygiene_check` | Quét data hygiene |
+| `role_based_digest` | Digest theo role của 1 user |
+| `noon_checkin_reminder` | Nhắc check-in giữa ngày |
+| `eod_checkin_reminder` | Nhắc check-in cuối ngày |
+| `missing_checkin_followup` | Follow-up ai chưa check-in |
+
+`run(name, inputs, ctx)` dispatch tới `_wf_<name>`. `_run_reminder(kind, ctx)` xử lý 3 reminder: lấy `missing_checkins`, với mỗi user gửi picker project hoặc nhắc.
+
+### `workflows/scheduler.py`
+
+`AgentScheduler` — APScheduler `AsyncIOScheduler`, timezone `CRON_TZ`.
+
+| Method | Mô tả |
+|---|---|
+| `start()` | Đăng ký: legacy env cron (digest/hygiene nếu có target), reminder cron (nếu `CRON_CHECKIN_ENABLED`), audit-cleanup cron, vòng poll automation |
+| `_add_cron(...)` | Đăng ký 1 job cron |
+| `_run_workflow / _run_audit_cleanup` | Thực thi job |
+| `_sync_automations()` | Mỗi `automation_poll_sec` (mặc định 60s): đọc `/agent/automations`, register/unregister job; dead-man bỏ job ≥ 3 lần fail |
+| `_run_db_automation(...)` | Chạy automation từ DB, patch `lastRun*` + `consecutiveFails` |
+
+---
+
+## 17.13 `app/` — FastAPI entrypoint & routes
+
+### `app/main.py`
+
+- `lifespan` — `configure_logging()`, `assert_config()`, `container.startup()`, … `container.shutdown()`.
+- `app = FastAPI(...)` — mount 3 router.
+- `GET /health` — kiểm `service`, `bb_pm_api`, `redis`; trả `status: ok|degraded`.
+
+### `app/api/routes_agent.py` — `build_agent_router()`
+
+| Route | Mô tả |
+|---|---|
+| `POST /api/plugins/bb-pm/agent/run` | Nhận `TurnRequest` JSON → `container.run_turn()` → `TurnReply` |
+| `GET /api/plugins/bb-pm/agent/metrics` | telemetry + concurrency + checkin counters |
+| `GET /api/plugins/bb-pm/health` | trạng thái orchestrator |
+
+### `app/api/routes_gapo.py` — `build_gapo_router()`
+
+| Route | Mô tả |
+|---|---|
+| `POST /api/plugins/gapo-agent/webhook` | Inbound Gapo — public, không token |
+| `POST /api/plugins/gapo-agent/send` | Outbound chủ động — yêu cầu header `X-Plugin-Token` |
+| `GET /api/plugins/gapo-agent/health` | counter của handler |
+
+### `app/api/routes_debug.py` — `build_debug_router()`
+
+`POST /debug/normalize-gapo` — trả `GapoNormalizedEvent` cho 1 payload (debug).
+
+---
+
+## 17.14 Bảng env variables quan trọng
+
+| Env | Vai trò |
+|---|---|
+| `BB_PM_API_URL`, `BB_PM_AGENT_TOKEN` (alias `AGENT_API_TOKEN`) | Kết nối bb-pm API |
+| `LLM_PROVIDER` | Provider active: `default|gemini|openrouter|9router` |
+| `LLM_BASE_URL/API_KEY/MODEL/MAX_TOKENS/TEMPERATURE` | Provider `default` |
+| `GEMINI_*`, `OPENROUTER_*`, `9ROUTER_*`/`NINE_ROUTER_*` | Provider thay thế |
+| `GAPO_API_URL, GAPO_BOT_TOKEN, GAPO_BOT_ID` | Gapo Bot API |
+| `GAPO_DRY_RUN` | `true` → không gửi tin thật |
+| `GAPO_SEND_TOKEN` | Token bảo vệ route `/send` |
+| `REDIS_URL` | Redis cho rate-limit/cooldown/action-pending |
+| `CRON_TZ` | Timezone scheduler (`Asia/Ho_Chi_Minh`) |
+| `CRON_CHECKIN_ENABLED` | Bật/tắt cron reminder |
+| `CRON_NOON/EOD_CHECKIN, CRON_MISSING_CHECKIN_FOLLOWUP` | Lịch reminder |
+| `CRON_DAILY_DIGEST(+_TARGET), CRON_WEEKLY_HYGIENE(+_TARGET)` | Cron legacy |
+| `AUDIT_RETENTION_DAYS, AUDIT_CLEANUP_SCHEDULE` | Dọn audit log |
+| `AGENT_RUN_MAX_PER_WINDOW, AGENT_RUN_WINDOW_SEC` | Rate-limit |
+| `PM_AGENT_PORT` | Cổng HTTP (mặc định 8001) |
+
+## 17.15 Build & chạy
+
+```bash
+# Local
+cd agent && pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1
+
+# Docker (service pm_agent trong docker-compose.yaml)
+docker compose build pm_agent
+docker compose up -d pm_agent
+
+# Test state machine check-in
+python -m tests.test_checkin_sm
+```
+
+Lưu ý chạy **1 uvicorn worker** — `dedup`, `concurrency`, `caller_cache` giữ state in-process.
+
+---
+
+# 18. Channel Integration, Deployment & Testing
+
+## 18.1 Từ OpenClaw sang Python service
+
+Trước 2026-05, agent chạy dưới dạng OpenClaw gateway + 3 plugin TypeScript. Kiến trúc đó
+đã bị **gỡ bỏ hoàn toàn**: `bb-pm-tools/`, `gapo-agent/`, `browser-tools/`, `docker/openclaw/`
+đã xoá khỏi repo; service `openclaw` trong `docker-compose.yaml` được thay bằng `pm_agent`.
+
+Lý do: OpenClaw là runtime bên thứ ba khó debug (plugin double-load làm scheduler chạy đôi),
+build phức tạp. Service Python `agent/` kiểm soát hoàn toàn, đơn giản hơn.
+
+`browser-tools` (gửi DM qua Playwright bằng tài khoản thật) bị bỏ — agent chỉ gửi tin qua
+Gapo Bot API.
+
+## 18.2 docker-compose topology
+
+| Service | Port host:container | Vai trò |
 |---|---|---|
-| `/api/plugins/gapo-agent/webhook` | POST | Gapo inbound webhook |
-| `/api/plugins/gapo-agent/send` | POST | Outbound send used by bb-pm-tools |
+| `bb_pm_db` | 5433:5432 | PostgreSQL 16 |
+| `bb_pm_redis` | 6379:6379 | Redis 7 |
+| `bb_pm_api` | 4000:4000 | Fastify API |
+| `bb_pm_web` | 5173:80 | React SPA |
+| `pm_agent` | 18789:8001 | **Python PM Agent** |
 
-## 18.5 Inbound Gapo flow
+`pm_agent` giữ host port `18789` (trùng port OpenClaw cũ) để URL webhook public không phải
+đổi. `depends_on`: `bb_pm_api`, `bb_pm_redis` (healthy). `extra_hosts: host.docker.internal`
+để với tới LLM endpoint trên host/tailnet.
 
-```mermaid
-sequenceDiagram
-  participant Gapo as Gapo Work
-  participant GW as OpenClaw Gateway
-  participant GP as gapo-agent
-  participant BP as bb-pm-tools
-  participant API as bb-pm API
+## 18.3 Gapo webhook
 
-  Gapo->>GW: POST /api/plugins/gapo-agent/webhook
-  GW->>GP: webhookHandler(req,res)
-  GP-->>Gapo: 200 { ok: true } fast ack
-  GP->>GP: parse text, senderName, conversationId
-  GP->>BP: POST /api/plugins/bb-pm/agent/run
-  BP->>API: tool calls with X-Agent-Token
-  API-->>BP: PM data
-  BP-->>GP: { reply }
-  GP->>Gapo: sendReply(conversationId, reply)
+Bot GapoWork cấu hình **Outgoing webhook URL** trỏ tới:
+
+```
+https://<domain-public>/api/plugins/gapo-agent/webhook
 ```
 
-Important detail:
+`<domain-public>` qua reverse proxy → `host:18789` → `pm_agent:8001`. Path
+`/api/plugins/gapo-agent/webhook` cố định trong code (`settings.gapo.webhook_path`).
 
-`gapo-agent` acknowledges Gapo before calling the orchestrator. This prevents Gapo from retrying webhook delivery while LLM is still processing.
+Lưu ý: GapoWork **nuốt các slash command** (`/help`, `/checkin`...) thành menu lệnh built-in
+của nó — chỉ forward webhook khi lệnh được khai báo trong cấu hình bot. Để khởi động luồng
+check-in mà không vướng việc này, gõ **không dấu `/`** (vd `checkin`) — `_is_worklog_start`
+trong `checkin/service.py` nhận cả dạng không slash.
 
-## 18.6 Payload normalization
+## 18.4 Test cô lập với production
 
-`gapo-agent/webhook.ts` supports real Gapo and legacy test payloads.
+Bot production chạy source cũ trên server khác (webhook `open-claw.maximus-nhon.online`).
+Để test `pm_agent` local **không ảnh hưởng production**:
 
-It extracts:
+1. Tạo **một bot Gapo test riêng** (token/id riêng) — bot production giữ nguyên webhook.
+2. Tạo `.env.test` (sao `.env`, đổi `GAPO_BOT_TOKEN/ID` sang bot test, `CRON_CHECKIN_ENABLED=false`).
+3. `docker compose --env-file .env.test up -d --force-recreate pm_agent`.
+4. Expose `pm_agent` ra internet bằng tunnel tạm: `cloudflared tunnel --url http://localhost:18789`.
+5. Đặt webhook bot test = URL tunnel + `/api/plugins/gapo-agent/webhook`.
+6. Map danh tính người test vào `channel_identities` (DB local) để `/checkin` resolve được caller.
 
-- `text`
-- `senderName`
-- `conversationId`
+DB của `pm_agent` luôn là `bb_pm_db` local — cô lập hoàn toàn với DB production.
 
-It prefixes sender name into text:
-
-```text
-[GAPO_USER: Nguyen Van A] task nào quá hạn?
-```
-
-WHY:
-
-- Maintains compatibility with old intent/caller parsing.
-- Gives the LLM human-readable speaker context.
-- Actual stable identity still comes from `conversationId = gapo:<id>` and BB-PM channel mapping.
-
-Forwarded request:
-
-```json
-{
-  "text": "[GAPO_USER: Nguyen Van A] task nào quá hạn?",
-  "conversationId": "gapo:123456",
-  "correlationId": "gapo-123456-1715000000000",
-  "source": "chat"
-}
-```
-
-## 18.7 Outbound Gapo flow
-
-`bb-pm-tools` sends outbound messages through:
-
-```http
-POST /api/plugins/gapo-agent/send
-X-Plugin-Token: <GAPO_SEND_TOKEN>
-```
-
-Body:
-
-```json
-{
-  "conversationId": "123456",
-  "text": "Digest hôm nay..."
-}
-```
-
-WHY route outbound through `gapo-agent`:
-
-- Centralizes Gapo API token.
-- Keeps channel credentials out of `bb-pm-tools`.
-- Lets scheduler/follow-up use same send path as reply flow.
-- Makes future channel replacement easier.
-
-## 18.8 gapo-agent config
-
-Preferred file:
-
-```text
-~/.openclaw/plugins/gapo-agent/config.json
-```
-
-Example:
-
-```json
-{
-  "gapo": {
-    "apiUrl": "https://api.gapowork.vn/3rd-bot/v1.0/3rd/messages",
-    "botToken": "<token>",
-    "botId": "<bot-id>"
-  },
-  "orchestrator": {
-    "url": "http://localhost:18789/api/plugins/bb-pm/agent/run",
-    "timeoutMs": 30000
-  },
-  "sendToken": "<same-as-GAPO_SEND_TOKEN>"
-}
-```
-
-Env fallback:
-
-```env
-GAPO_API_URL=https://api.gapowork.vn/3rd-bot/v1.0/3rd/messages
-GAPO_BOT_TOKEN=<token>
-GAPO_BOT_ID=<bot-id>
-ORCHESTRATOR_URL=http://localhost:18789/api/plugins/bb-pm/agent/run
-ORCHESTRATOR_TIMEOUT_MS=30000
-GAPO_SEND_TOKEN=<shared-secret>
-```
-
-## 18.9 Full deployment topology
-
-```mermaid
-flowchart TD
-  subgraph UserSide[Users]
-    U[PM/Member in Gapo Work]
-  end
-
-  subgraph OpenClaw[OpenClaw Gateway :18789]
-    GP[gapo-agent plugin]
-    BP[bb-pm-tools plugin]
-  end
-
-  subgraph Core[BB-PM Core]
-    WEB[React Web]
-    API[Fastify API]
-    DB[(PostgreSQL)]
-    REDIS[(Redis optional)]
-  end
-
-  subgraph AI[LLM Provider]
-    LLM[OpenAI-compatible endpoint]
-  end
-
-  U -->|message| GP
-  GP -->|/agent/run| BP
-  BP -->|chat/completions tools| LLM
-  BP -->|X-Agent-Token| API
-  API --> DB
-  BP -. cooldown/rate .-> REDIS
-  BP -->|/gapo-agent/send| GP
-  GP -->|reply| U
-  WEB -->|Bearer JWT| API
-```
-
-## 18.10 Setup order for full loop
-
-1. Start BB-PM DB/API/Web.
-2. Run BB-PM migrations and seed.
-3. Ensure API `.env` has:
-
-   ```env
-   AGENT_API_TOKEN=<secret>
-   AGENT_USER_EMAIL=pm-agent@bluebolt.local
-   ```
-
-4. Configure `bb-pm-tools`:
-
-   ```env
-   BB_PM_API_URL=http://localhost:4000/api/v1
-   BB_PM_AGENT_TOKEN=<same-as-AGENT_API_TOKEN>
-   LLM_PROVIDER=default
-   LLM_BASE_URL=http://localhost:8000/v1
-   LLM_MODEL=<model-with-tool-calling>
-   GAPO_SEND_URL=http://localhost:18789/api/plugins/gapo-agent/send
-   GAPO_SEND_TOKEN=<shared-secret>
-   ```
-
-5. Build `bb-pm-tools`:
-
-   ```bash
-   cd /home/bbsw/pm/bb-pm-tools
-   pnpm install
-   pnpm build
-   ```
-
-6. Configure `gapo-agent` in OpenClaw:
-
-   ```json
-   {
-     "gapo": {
-       "botToken": "<token>",
-       "botId": "<bot-id>"
-     },
-     "orchestrator": {
-       "url": "http://localhost:18789/api/plugins/bb-pm/agent/run",
-       "timeoutMs": 30000
-     },
-     "sendToken": "<shared-secret>"
-   }
-   ```
-
-7. Enable plugins in OpenClaw config.
-8. Start OpenClaw gateway.
-9. Point Gapo outgoing webhook to:
-
-   ```text
-   https://<public-domain>/api/plugins/gapo-agent/webhook
-   ```
-
-10. Test message in Gapo:
-
-   ```text
-   task nào quá hạn?
-   ```
-
-## 18.11 Three-token model
-
-There are three separate secrets. Do not confuse them.
-
-| Token | Used between | Header/env |
-|---|---|---|
-| BB-PM agent token | `bb-pm-tools` -> `bb-pm API` | `X-Agent-Token`, `BB_PM_AGENT_TOKEN`, API `AGENT_API_TOKEN` |
-| Gapo bot token | `gapo-agent` -> Gapo API | `GAPO_BOT_TOKEN` |
-| Plugin send token | `bb-pm-tools` -> `gapo-agent/send` | `X-Plugin-Token`, `GAPO_SEND_TOKEN` |
-
-WHY separate:
-
-- If Gapo token leaks, BB-PM API is still protected.
-- If agent token leaks, attacker still cannot send Gapo messages unless gateway/send token also leaks.
-- Rotation can be scoped per boundary.
-
-## 18.12 Correlation and observability
-
-Trace IDs:
-
-| ID | Source | Used for |
-|---|---|---|
-| `requestId` | bb-pm-tools `/agent/run` | HTTP/log trace |
-| `correlationId` | channel plugin or generated | Agent audit rows |
-| `conversationId` | channel thread | Memory grouping, dedup, caller resolve |
-
-Example:
-
-```text
-conversationId = gapo:123456
-correlationId = gapo-123456-1715000000000
-```
-
-Where to inspect:
-
-- OpenClaw gateway logs.
-- `gapo-agent` logs: inbound and sendReply.
-- `bb-pm-tools` logs: fast-path, slot, LLM, tool calls.
-- BB-PM DB: `agent_audit_log`, `agent_memory`, `agent_follow_ups`.
-- `GET /api/plugins/bb-pm/agent/metrics`.
-- `GET /api/plugins/bb-pm/health`.
-
-## 18.13 Common failure modes across OpenClaw + bb-pm-tools
-
-| Symptom | Layer | Cause | Fix |
-|---|---|---|---|
-| Gapo webhook retries repeatedly | `gapo-agent` | Handler not acking fast or route unreachable | Check public URL, gateway bind, logs |
-| Gapo receives generic error reply | `gapo-agent` -> `bb-pm-tools` | Orchestrator timeout/fail | Check `ORCHESTRATOR_URL`, `/agent/health`, LLM |
-| `/agent/run` returns 503 overloaded | `bb-pm-tools` | Concurrency queue full | Check LLM latency, add fast-path, tune slots |
-| Tool calls fail 401 | `bb-pm-tools` -> `bb-pm` | Agent token mismatch | Sync `BB_PM_AGENT_TOKEN` and `AGENT_API_TOKEN` |
-| Agent cannot answer "task của tôi" | identity mapping | No `ChannelIdentity` for Gapo cid | Create/import mapping |
-| Scheduled digest not sent | outbound | Missing `GAPO_SEND_TOKEN` or bad target | Test `/gapo-agent/send` |
-| Reply has markdown artifacts | formatter/channel | LLM returned markdown | Check formatter, `stripMarkdownForGapo` |
-| No tool calls from LLM | LLM server | No OpenAI function-calling support | Verify `tool_calls` with curl |
-
-## 18.14 Maintenance rules
-
-- Keep PM business rules in `bb-pm`, not in `gapo-agent`.
-- Keep channel payload parsing in `gapo-agent`, not in `bb-pm-tools`.
-- Keep prompt/tool orchestration in `bb-pm-tools`, not in `bb-pm` API.
-- Add new PM capability as API endpoint first, then expose as tool.
-- For every new mutating tool, define confirmation rules in prompt/eval.
-- For every scheduled workflow, prefer deterministic workflow functions over LLM prompts.
-- For every new channel, preserve the `/agent/run` contract and map its thread/user ID into `conversationId`.
-
+---
 
 # 19. Daily Check-in Deep Dive
 
 ## 19.1 Mục tiêu UX
 
-Daily check-in cần đủ nhanh để user không ngại dùng mỗi ngày. Vì vậy `/checkin` không hiển thị toàn bộ project đang mở; nó chỉ đưa ra 3 project gần đây rồi cho phép nhập tự do nếu user đang làm project khác.
+Bot nhắc nhân viên cập nhật worklog hằng ngày qua GapoWork. Người dùng gõ `checkin` → bot
+hỏi project → người dùng chọn → gửi nội dung công việc → bot ghi nhận. Reminder tự động
+lúc trưa / cuối ngày / sau giờ chốt.
 
-```text
-Hôm nay bạn làm project nào?
+## 19.2 State machine
 
-Gần đây:
-1. AI PM Agent
-2. Logistics Dashboard
-3. CRM Internal
+Cài tại `checkin/service.py` (`CheckinService`). Session lưu qua bb-pm API
+(`checkin_sessions`), TTL `CHECKIN_SESSION_TTL_MS` (mặc định 2h).
 
-Hoặc nhập tên project khác.
+```
+IDLE
+ └─(gõ "checkin"/"/checkin"/"worklog")→ AWAITING_PROJECT
+       ├─ chọn project đúng              → AWAITING_UPDATE
+       └─ nhập sai tên                   → ở lại AWAITING_PROJECT, báo "chưa thấy project đó"
+ AWAITING_UPDATE
+       └─ gửi nội dung worklog → parse_checkin (LLM + regex fallback)
+              ├─ needs_clarification     → hỏi lại, giữ state
+              └─ ok                      → COMPLETED (tạo backlog GAPO_CHECKIN)
+ AWAITING_TASK_CONFIRM   — chỉ dùng cho luồng sửa worklog (edit)
 ```
 
-Cách chọn hợp lệ:
+Lệnh `hủy` (hoặc payload `CANCEL_CHECKIN`) huỷ session bất kỳ lúc nào.
 
-- quick reply;
-- gõ số thứ tự;
-- gõ tên project bất kỳ còn open task của user.
+## 19.3 API contract (bb-pm)
 
-## 19.2 Luồng xử lý
+| Endpoint | Dùng cho |
+|---|---|
+| `POST /agent/checkin-sessions/start` | Mở session |
+| `GET /agent/checkin-sessions/current` | Lấy session hiện tại |
+| `PATCH /agent/checkin-sessions/:id` | Cập nhật state/project |
+| `POST /agent/checkin-sessions/:id/complete` | Đóng session |
+| `POST /agent/checkins/import` | Tạo backlog `GAPO_CHECKIN` |
+| `GET /agent/checkins/projects` | Project của user |
+| `GET /agent/checkins/missing` | User chưa check-in (cho reminder) |
 
-```text
-/checkin hoặc reminder
-  -> start session
-  -> AWAITING_PROJECT
-  -> user chọn project
-  -> AWAITING_UPDATE
-  -> user gửi tiến độ
-     -> lưu worklog trực tiếp theo project
-     -> nếu parser nhận diện task rất rõ: gắn task ngầm như enrichment
-  -> chọn task
-  -> tạo backlog GAPO_CHECKIN
-  -> COMPLETED
-```
+Lưu ý: trường datetime gửi lên bb-pm phải có hậu tố `Z` (validator Zod `.datetime()` từ
+chối `+00:00`) — xem `_expires_at_iso()` trong `checkin/service.py`.
 
-`bb-pm-tools/src/checkin.ts` xử lý turn hội thoại; `bb-pm API` giữ session và business rule. Parse update dùng LLM trước, regex fallback sau để không mất check-in khi LLM chập chờn.
+## 19.4 Reminder & cron
 
-## 19.3 API contract
+3 workflow reminder (`noon/eod/missing_checkin_followup`) trong `workflows/registry.py`,
+lên lịch bởi `AgentScheduler` khi `CRON_CHECKIN_ENABLED=true`. `_run_reminder` lấy danh
+sách user thiếu check-in, gửi picker project hoặc câu nhắc.
 
-| Endpoint | Ý nghĩa |
-| --- | --- |
-| `POST /api/v1/agent/checkin-sessions/start` | Mở/reset phiên |
-| `GET /api/v1/agent/checkin-sessions/current` | Lấy phiên hiện tại |
-| `PATCH /api/v1/agent/checkin-sessions/:id` | Cập nhật state/project/task |
-| `POST /api/v1/agent/checkin-sessions/:id/complete` | Đóng phiên |
-| `POST /api/v1/agent/checkins/import` | Tạo backlog `GAPO_CHECKIN` |
-| `GET /api/v1/agent/checkins/status` | Theo dõi ai đã check-in |
-| `GET /api/v1/agent/checkins/missing` | Tìm user còn thiếu check-in |
-| `GET /api/v1/agent/checkins/project-daily-summary` | Tổng hợp theo project trong ngày |
+## 19.5 Failure modes & quan sát
 
-## 19.4 Reminder và cron
+| Hiện tượng | Nguyên nhân thường gặp |
+|---|---|
+| Bot trả "chưa nhận diện được tài khoản" | User chưa có `channel_identities` map Gapo id → bb-pm user |
+| `/checkin` không phản hồi | GapoWork nuốt slash command — gõ `checkin` không dấu `/` |
+| Bot trả câu lạc đề khi đang chọn project | (Đã sửa) trước đây nhập sai tên project làm văng khỏi luồng |
+| Session "kẹt" | Session cũ chưa hết hạn — gõ `hủy` hoặc chờ TTL 2h |
 
-Workflow hiện tại:
-
-- `noon_checkin_reminder`
-- `eod_checkin_reminder`
-- `missing_checkin_followup`
-
-Biến môi trường:
-
-- `CRON_CHECKIN_ENABLED`
-- `CRON_NOON_CHECKIN`
-- `CRON_EOD_CHECKIN`
-- `CRON_MISSING_CHECKIN_FOLLOWUP`
-
-Reminder chỉ gửi khi user còn thiếu check-in, có Gapo identity, không có active session và có project open để chọn.
-
-## 19.5 Failure modes và quan sát
-
-| Hiện tượng | Cần kiểm tra |
-| --- | --- |
-| Gửi `/checkin` nhưng không có prompt | caller mapping, open task, log `checkin:no_project` |
-| Reminder không tới | cron flag, target Gapo identity, active session |
-| Bot hỏi task tiếp | không còn là happy path mặc định; nếu xuất hiện cần kiểm tra runtime có đang chạy bản cũ không |
-| Parse update kém | telemetry `parseFallback`, LLM health |
-| Report thiếu người | endpoint `/checkins/missing`, backlog nguồn `GAPO_CHECKIN` |
-
-Metrics quan trọng từ `/api/plugins/bb-pm/agent/metrics`: `sessionsStarted`, `projectsSelected`, `completed`, `parseSuccess`, `parseFallback`, `remindersSent`, `remindersSkipped`.
+Metrics từ `GET /api/plugins/bb-pm/agent/metrics` (khoá `checkin`): `sessions_started,
+projects_selected, completed, parse_success, parse_fallback, reminders_sent, reminders_skipped`.

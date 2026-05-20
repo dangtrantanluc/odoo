@@ -81,8 +81,18 @@ class GapoHandler:
             self.counters["webhook_failed"] += 1
             log_io("gapo.webhook.turn_error", error=str(err),
                    correlation_id=normalized.correlation_id)
+            # Gửi reply generic để user không bị im lặng — không expose chi tiết
+            # lỗi backend ra ngoài.
+            fallback_reply = TurnReply(
+                reply=("Mình gặp lỗi khi xử lý yêu cầu này. "
+                       "Bạn thử lại sau giây lát, hoặc gõ /help nhé."),
+                mode="error",
+                request_id=normalized.correlation_id,
+            )
+            sent = await self._deliver(normalized, fallback_reply)
             return self._result(started, normalized, processed=False,
-                                error={"message": str(err)})
+                                error={"message": str(err)},
+                                sent=sent.model_dump())
 
         sent = await self._deliver(normalized, reply)
         self.counters["webhook_processed"] += 1
@@ -134,6 +144,23 @@ class GapoHandler:
             retry = await self._client.send(conversation_id, fallback)
             if retry.sent:
                 return retry
+            sent = retry
+        # DM fallback: nếu thread không gửi được (bot bị kick, mismatch bot,
+        # thread đóng…) thử gửi DM trực tiếp cho from_user_id để user không
+        # bị im lặng. Chỉ thử khi target hiện tại là thread (không phải dm:).
+        if (not sent.sent
+                and normalized.from_user_id
+                and not conversation_id.lower().startswith(("dm:", "gapo:dm:"))):
+            dm_target = f"dm:{normalized.from_user_id}"
+            log_io("gapo.send.dm_fallback", target=dm_target,
+                   thread_failed=conversation_id)
+            dm_body: TextBody | QuickRepliesBody = (
+                TextBody(text=build_quick_reply_fallback_text(body))
+                if isinstance(body, QuickRepliesBody) else body
+            )
+            dm_retry = await self._client.send(dm_target, dm_body)
+            if dm_retry.sent:
+                return dm_retry
         return sent
 
     @staticmethod

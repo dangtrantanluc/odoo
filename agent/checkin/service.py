@@ -114,7 +114,20 @@ class CheckinService:
             projects = await self._list_user_projects(ctx.caller_user_id)
             selected = _select_by_text(projects, text)
             if not selected:
-                return None
+                # Stay in the flow instead of falling through to unrelated
+                # layers — the user is mid-check-in and expects a project name.
+                body = await self.build_project_selection_reply(ctx.caller_user_id)
+                msg = (
+                    "Mình chưa thấy project tên đó trong danh sách của bạn. "
+                    'Bạn chọn lại bằng số hoặc tên đúng, hoặc gõ "hủy" để dừng.'
+                )
+                channel_reply = (
+                    ReplyBody(kind="quick_replies", text=msg, options=body.options)
+                    if body is not None
+                    else None
+                )
+                return CheckinTurnResult(reply=msg, channel_reply=channel_reply,
+                                         pattern="checkin:project_not_found")
             return await self._select_project(ctx, session, selected["id"], message_id)
 
         if state == "AWAITING_TASK_CONFIRM":
@@ -132,12 +145,64 @@ class CheckinService:
         if state != "AWAITING_UPDATE":
             return None
 
-        parsed, used_llm = await parse_checkin(text, self._llm)
+        # NOTE (Option A): _looks_like_query regex auto-escape đã DEPRECATED.
+        # Pipeline LLM-first router xử lý "rẽ ngang" ở layer trên — daily_agent
+        # gọi LlmIntentRouter trước khi vào đây nếu state=AWAITING_UPDATE.
+        # CheckinService giờ chỉ chạy khi pipeline xác nhận intent=checkin.
+        # _looks_like_query() helper vẫn còn để fallback / test, nhưng không
+        # gọi trong flow chính nữa.
+
+        # Option B — stateful parser: load context clarify từ pendingParsed.
+        pending = session.get("pendingParsed") or {}
+        prev_question = (pending.get("clarify_question")
+                          if isinstance(pending, dict) else None)
+        prev_partial = (pending.get("partial_draft")
+                         if isinstance(pending, dict) else None)
+        clarify_count = (int(pending.get("clarify_count", 0))
+                          if isinstance(pending, dict) else 0)
+
+        parsed, used_llm = await parse_checkin(
+            text, self._llm,
+            prev_question=prev_question, prev_partial=prev_partial,
+        )
         self.counters["parse_success" if used_llm else "parse_fallback"] += 1
+
         if parsed.needs_clarification:
+            new_count = clarify_count + 1
+            # Auto-cancel sau 3 lần clarify liên tiếp — tránh kẹt vô hạn.
+            if new_count >= 3:
+                log_event("checkin.auto_cancel_clarify_loop",
+                          user_id=ctx.caller_user_id, count=new_count)
+                await self._bbpm.complete_checkin_session(session["id"])
+                return CheckinTurnResult(
+                    reply=("Mình chưa parse được worklog sau 3 lần thử. "
+                           "Đã dừng flow checkin. Bạn gõ /checkin để bắt "
+                           "đầu lại với nội dung rõ hơn nhé."),
+                    pattern="checkin:auto_cancelled",
+                )
+            # Lưu clarify question + partial draft + count cho turn sau.
+            new_pending = dict(pending) if isinstance(pending, dict) else {}
+            new_pending["clarify_question"] = parsed.clarification_question
+            new_pending["clarify_count"] = new_count
+            # Lưu phần đã parse được (dù chưa đủ) làm draft
+            new_pending["partial_draft"] = {
+                "summary": parsed.summary,
+                "hours": parsed.hours,
+                "status": parsed.status,
+                "blocker": (parsed.blocker.model_dump() if parsed.blocker else None),
+                "task_hint": parsed.task_hint,
+            }
+            try:
+                await self._bbpm.patch_checkin_session(
+                    session["id"], pendingParsed=new_pending,
+                    expiresAt=_expires_at_iso(),
+                )
+            except Exception:  # noqa: BLE001 — save best-effort
+                pass
             return CheckinTurnResult(
-                reply=parsed.clarification_question
-                or "Bạn nói rõ thêm giúp mình phần update hôm nay nhé.",
+                reply=(parsed.clarification_question
+                       or "Bạn nói rõ thêm giúp mình phần update hôm nay nhé.")
+                + '\n\n(Gõ "hủy" nếu muốn dừng worklog để làm việc khác.)',
                 pattern="checkin:clarify",
             )
         if _is_edit_apply(session):
@@ -401,6 +466,51 @@ def _is_cancel(text: str) -> bool:
     return bool(_CANCEL.match(normalize(text)))
 
 
+# VERY STRONG signals — không thể là worklog content. Match → escape NGAY,
+# bỏ qua worklog guard.
+_QUERY_VERY_STRONG = re.compile(
+    r"\?\s*$"                                              # kết bằng dấu hỏi
+    r"|\bco\s+ai\b"                                        # "có ai"
+    r"|\bdo\s+ai\b"                                        # "do ai"
+    r"|\bai\s+(phu\s*trach|update)\b"                      # "ai phụ trách / ai update"
+    r"|\bbao\s*nhieu\b"                                    # "bao nhiêu"
+    r"|\bco\s+nhung\s+\w"                                  # "có những X"
+    r"|\btask\s+nao\b",                                    # "task nào"
+    re.IGNORECASE,
+)
+
+# STRONG nhưng có thể trùng worklog content — chỉ escape khi KHÔNG có worklog
+# markers (giờ/status/action verb).
+_QUERY_STRONG = re.compile(
+    r"^\s*(ai|tai sao|o dau|lam sao|the nao|may)\b",       # khởi đầu = từ hỏi
+    re.IGNORECASE,
+)
+
+# Tín hiệu worklog content rõ ràng — bảo vệ STRONG signals khỏi false positive.
+_WORKLOG_MARKERS = re.compile(
+    r"\d+\s*(tieng|h|gio|phut)\b"          # "2 tieng", "4h", "30 phut"
+    r"|\b(xong|done|review|dang\s+lam|cho\s+duyet|todo)\b"  # status words
+    r"|\b(fix|sua|lam|viet|cap\s*nhap|cap\s*nhat|update|"
+    r"hoan\s*thanh|test|deploy|chay|trien\s*khai|push|commit)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_query(text: str) -> bool:
+    """True nếu text rõ ràng là câu hỏi/query, không phải worklog update.
+
+    Logic 2 tầng:
+      1. VERY STRONG ("có ai/do ai/bao nhiêu") → escape ngay, không guard.
+      2. STRONG ("ai/tại sao ở đầu") → chỉ escape nếu không có worklog marker.
+    """
+    n = normalize(text or "")
+    if _QUERY_VERY_STRONG.search(n):
+        return True
+    if _WORKLOG_MARKERS.search(n):
+        return False
+    return bool(_QUERY_STRONG.search(n))
+
+
 def _is_worklog_start(text: str) -> bool:
     n = normalize(text)
     return bool(
@@ -475,7 +585,10 @@ def _project_choice_text(options: list[ReplyOption]) -> str:
 
 
 def _expires_at_iso() -> str:
-    return (datetime.now(timezone.utc) + timedelta(seconds=settings.checkin_session_ttl_sec)).isoformat()
+    # bb-pm API validates datetime with a Zod `.datetime()` schema which only
+    # accepts the `Z` suffix, not a `+00:00` offset.
+    dt = datetime.now(timezone.utc) + timedelta(seconds=settings.checkin_session_ttl_sec)
+    return dt.isoformat().replace("+00:00", "Z")
 
 
 def _is_expired(session: dict[str, Any]) -> bool:

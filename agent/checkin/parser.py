@@ -49,7 +49,10 @@ _PARSE_SYSTEM_PROMPT = (
     '"task_hint":"string|null","needs_clarification":false,'
     '"clarification_question":"string|null"}. '
     "Không bịa dữ liệu; nếu thiếu giờ thì dùng 1; "
-    "nếu input mơ hồ không có tiến độ cụ thể thì needs_clarification=true."
+    "nếu input mơ hồ không có tiến độ cụ thể thì needs_clarification=true. "
+    "Nếu có CONTEXT từ turn trước (clarify question + worklog draft), "
+    "COMBINE thông tin: câu user mới là câu trả lời cho clarify question, "
+    "bổ sung vào summary/hours/status — KHÔNG yêu cầu user gõ lại từ đầu."
 )
 
 
@@ -215,16 +218,27 @@ def _normalize_parsed(payload: dict, fallback: ParsedCheckin) -> ParsedCheckin:
     )
 
 
-async def parse_checkin(text: str, llm: LlmClient) -> tuple[ParsedCheckin, bool]:
-    """Return (parsed, used_llm). Falls back to regex on any LLM failure."""
+async def parse_checkin(
+    text: str, llm: LlmClient, *,
+    prev_question: Optional[str] = None,
+    prev_partial: Optional[dict] = None,
+) -> tuple[ParsedCheckin, bool]:
+    """Return (parsed, used_llm). Falls back to regex on any LLM failure.
+
+    Stateful: nếu `prev_question` được truyền (clarify ở turn trước), LLM sẽ
+    combine câu trả lời mới với context để hoàn thiện worklog, thay vì hỏi
+    lại từ đầu.
+    """
     fallback = regex_fallback(text)
     if fallback.needs_clarification and has_relative_now_range(text):
         return fallback, False
+
+    user_block = _build_user_block(text, prev_question, prev_partial)
     try:
         res = await llm.chat(
             [
                 {"role": "system", "content": _PARSE_SYSTEM_PROMPT},
-                {"role": "user", "content": text},
+                {"role": "user", "content": user_block},
             ],
             temperature=0,
             max_tokens=350,
@@ -235,3 +249,26 @@ async def parse_checkin(text: str, llm: LlmClient) -> tuple[ParsedCheckin, bool]
     except Exception as err:  # noqa: BLE001
         log_event("checkin.parse_fallback", level="warning", error=str(err))
         return fallback, False
+
+
+def _build_user_block(
+    text: str,
+    prev_question: Optional[str],
+    prev_partial: Optional[dict],
+) -> str:
+    """Render block input cho LLM — kèm clarify question + draft trước nếu có."""
+    if not prev_question and not prev_partial:
+        return text
+    parts: list[str] = []
+    if prev_question:
+        parts.append(f"CONTEXT — clarify question đã hỏi: \"{prev_question}\"")
+    if prev_partial:
+        parts.append("CONTEXT — worklog draft (từ turn trước):")
+        for k in ("summary", "hours", "status", "blocker", "task_hint"):
+            v = prev_partial.get(k)
+            if v:
+                parts.append(f"  - {k}: {v}")
+    parts.append("")
+    parts.append(f"User trả lời mới: \"{text}\"")
+    parts.append("Hãy COMBINE và trả ParsedCheckin hoàn thiện.")
+    return "\n".join(parts)

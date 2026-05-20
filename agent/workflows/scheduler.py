@@ -49,6 +49,14 @@ class AgentScheduler:
                            "missing_checkin_followup", {}, None)
         else:
             log_event("scheduler.checkin_disabled")
+        # ── risk scan (quét rủi ro các project IN_PROGRESS) ─────────────
+        if cron.risk_scan_enabled:
+            self._add_cron(
+                "project-risk-scan", cron.risk_scan.schedule,
+                "project_risk_scan", {}, cron.risk_scan.target or None,
+            )
+        else:
+            log_event("scheduler.risk_scan_disabled")
         # ── audit retention cleanup ─────────────────────────────────────
         if cron.audit_retention_days > 0:
             self._scheduler.add_job(
@@ -149,7 +157,7 @@ class AgentScheduler:
             from datetime import datetime, timezone
             await self._bbpm.patch_automation(
                 automation_id,
-                lastRunAt=datetime.now(timezone.utc).isoformat(),
+                lastRunAt=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 lastRunStatus="ok" if result.ok else "error",
                 lastRunError=None if result.ok else result.message[:2000],
                 consecutiveFails=0 if result.ok else consecutive_fails + 1,

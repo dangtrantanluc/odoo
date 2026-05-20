@@ -14,7 +14,9 @@ from channel.gapo.client import GapoClient
 from channel.gapo.models import QuickRepliesBody, QuickReplyOption, TextBody
 from checkin.service import CheckinService
 from core.logging import log_event
-from infrastructure.bbpm_client import BbPmClient
+from infrastructure.bbpm_client import BbPmApiError, BbPmClient
+from infrastructure.llm_client import LlmClient
+from reporting.risk.analyzer import RiskAnalyzer, format_risk_report
 from tools.catalog import ToolCatalog
 
 
@@ -44,14 +46,17 @@ class WorkflowRegistry:
     def __init__(
         self, bbpm: BbPmClient, catalog: ToolCatalog,
         gapo: GapoClient, checkin: CheckinService,
+        llm: LlmClient | None = None,
     ) -> None:
         self._bbpm = bbpm
         self._catalog = catalog
         self._gapo = gapo
         self._checkin = checkin
+        self._llm = llm
         self.names = [
             "daily_digest", "weekly_report", "hygiene_check", "role_based_digest",
             "noon_checkin_reminder", "eod_checkin_reminder", "missing_checkin_followup",
+            "project_risk_scan",
         ]
 
     async def run(self, name: str, inputs: dict[str, Any], ctx: WorkflowContext) -> WorkflowResult:
@@ -154,6 +159,81 @@ class WorkflowRegistry:
         return WorkflowResult(ok=True, message=f"{kind} reminder sent={sent} skipped={skipped}",
                               meta={"sent": sent, "skipped": skipped})
 
+    # ── risk scan ───────────────────────────────────────────────────────
+    async def _wf_project_risk_scan(self, inputs, ctx) -> WorkflowResult:
+        """Quét risk các project IN_PROGRESS; gửi digest cho owner.
+
+        Inputs (optional):
+          - projectIds: list[int] — chỉ quét những project này.
+          - target: fallback Gapo conversation nếu không lấy được DM owner.
+          - withNarrative: bool — kèm LLM tóm tắt (mặc định True).
+        """
+        analyzer = RiskAnalyzer(self._bbpm, self._llm)
+        with_narrative = bool(inputs.get("withNarrative", True))
+        project_ids = inputs.get("projectIds")
+        fallback = inputs.get("target") or ctx.target
+
+        if isinstance(project_ids, list) and project_ids:
+            reports = []
+            for pid in project_ids:
+                try:
+                    reports.append(await analyzer.analyze_project(
+                        int(pid), with_narrative=with_narrative))
+                except Exception as err:  # noqa: BLE001
+                    log_event("workflow.risk_scan.analyze_failed",
+                              level="warning", project_id=pid, error=str(err))
+        else:
+            reports = await analyzer.analyze_company()
+            if with_narrative:
+                # analyze_company() không kèm narrative để rẻ; chạy thêm cho RED/YELLOW.
+                for r in reports:
+                    if r.overall in {"RED", "YELLOW"}:
+                        rich = await analyzer.analyze_project(
+                            r.project_id, with_narrative=True)
+                        r.narrative = rich.narrative
+
+        sent = skipped = 0
+        for r in reports:
+            if r.overall == "GREEN":
+                skipped += 1
+                continue
+            target = await self._risk_target(r.project_id, fallback)
+            if not target:
+                skipped += 1
+                continue
+            await self._send(target, format_risk_report(r))
+            await self._audit("risk.digest_sent",
+                              {"projectId": r.project_id,
+                               "overall": r.overall, "score": r.score}, ctx)
+            sent += 1
+        return WorkflowResult(
+            ok=True, message=f"risk scan sent={sent} skipped={skipped}",
+            meta={"sent": sent, "skipped": skipped, "total": len(reports)},
+        )
+
+    async def _risk_target(
+        self, project_id: int, fallback: str | None
+    ) -> str | None:
+        """Tìm Gapo target gửi digest: ưu tiên DM owner, fallback target chung."""
+        try:
+            project = await self._bbpm.get_project(project_id)
+        except BbPmApiError:
+            return fallback
+        owner_id = (project.get("owner") or {}).get("id") or project.get("ownerId")
+        if not owner_id:
+            return fallback
+        try:
+            thread = await self._bbpm.gapo_thread(int(owner_id))
+        except BbPmApiError:
+            return fallback
+        target = (thread or {}).get("gapoThreadId")
+        if target:
+            return target
+        gapo_user_id = (thread or {}).get("gapoUserId")
+        if gapo_user_id:
+            return f"dm:{gapo_user_id}"
+        return fallback
+
     # ── helpers ─────────────────────────────────────────────────────────
     async def _send(self, target: str, text: str) -> None:
         await self._gapo.send(target, TextBody(text=text))
@@ -168,4 +248,5 @@ class WorkflowRegistry:
 
 def _two_hours() -> str:
     from datetime import datetime, timedelta, timezone
-    return (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    # `Z` suffix — bb-pm Zod datetime schema rejects `+00:00` offset.
+    return (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat().replace("+00:00", "Z")

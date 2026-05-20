@@ -23,6 +23,8 @@ HELP_TEXT = (
     "• /projects — danh sách dự án\n"
     "• /digest — tổng hợp hôm nay\n"
     "• /weekly — báo cáo tuần\n"
+    "• /risk <tên project> — risk của dự án\n"
+    "• /plan — lập kế hoạch dự án mới (Manager/Admin)\n"
     "• /automations — automation đang chạy\n"
     "• /help — trợ giúp"
 )
@@ -48,31 +50,12 @@ class FastPathRouter:
             "report": lambda a, c: self._catalog.daily_digest(),
             "weekly": lambda a, c: self._catalog.weekly_report(),
             "automations": lambda a, c: self._catalog.list_automations(),
+            "risk": lambda a, c: self._catalog.risk_snapshot(a),
         }
-        # Vietnamese intent patterns -> handler. Order matters (first match wins).
-        self._patterns: list[tuple[re.Pattern[str], Callable]] = [
-            (re.compile(r"task.*qu[áa] h[ạa]n|qu[áa] h[ạa]n", re.IGNORECASE),
-             lambda m, c: self._catalog.overdue_tasks()),
-            (re.compile(r"task.*l[âa]u.*update|task.*stale", re.IGNORECASE),
-             lambda m, c: self._catalog.stale_tasks()),
-            (re.compile(r"\b(digest|t[ổo]ng h[ợo]p|b[áa]o c[áa]o s[áa]ng)\b", re.IGNORECASE),
-             lambda m, c: self._catalog.daily_digest()),
-            (re.compile(r"\b(b[áa]o c[áa]o tu[âa]n|weekly)\b", re.IGNORECASE),
-             lambda m, c: self._catalog.weekly_report()),
-            (re.compile(r"task c[ủu]a t[ôo]i|task c[ủu]a m[ìi]nh|task h[ôo]m nay c[ủu]a t[ôo]i",
-                        re.IGNORECASE),
-             lambda m, c: self._my_tasks(c)),
-            (re.compile(r"d[ựu] [áa]n.*(?:n[àa]o|đang ch[ạa]y)|c[óo] project n[àa]o", re.IGNORECASE),
-             lambda m, c: self._catalog.list_projects()),
-            (re.compile(r"data hygiene|ki[ểe]m tra d[ữu] li[ệe]u", re.IGNORECASE),
-             lambda m, c: self._catalog.data_hygiene()),
-            (re.compile(r"automation", re.IGNORECASE),
-             lambda m, c: self._catalog.list_automations()),
-            (re.compile(r"t[ìi]nh h[ìi]nh d[ựu] [áa]n\s+(.+)$", re.IGNORECASE),
-             lambda m, c: self._catalog.project_snapshot(m.group(1).strip())),
-            (re.compile(r"task c[ủu]a\s+(.+)$", re.IGNORECASE),
-             lambda m, c: self._catalog.person_tasks(m.group(1).strip())),
-        ]
+        # VN patterns đã DEPRECATE — LLM-first router xử lý hết câu free-text.
+        # Chỉ giữ slash dict ở trên. Đặt rỗng để legacy code đường cũ vẫn chạy
+        # khi LLM_FIRST_ROUTING=false (rollback path).
+        self._patterns: list[tuple[re.Pattern[str], Callable]] = []
 
     async def _my_tasks(self, ctx: TurnRequest) -> Optional[str]:
         if not ctx.caller_user_id:
@@ -87,9 +70,15 @@ class FastPathRouter:
             cmd = slash.group(1).lower()
             handler = self._slash.get(cmd)
             if handler is None:
-                return None
+                # Slash không biết → trả /help thay vì rơi xuống NL-SQL (vốn
+                # luôn classify "ambiguous" cho token đơn lẻ và làm rối user).
+                return (f'Mình chưa biết lệnh "/{cmd}".\n\n{HELP_TEXT}',
+                        f"slash:unknown:{cmd}")
             reply = await handler(slash.group(2), ctx)
             return (reply, f"slash:{cmd}") if reply else None
+        # "help" / "help me" không có dấu / cũng đẩy về help text.
+        if re.match(r"^(?:help|trợ giúp|tro giup|huong dan|hướng dẫn)\b", stripped, re.IGNORECASE):
+            return (HELP_TEXT, "pattern:help")
 
         for pattern, handler in self._patterns:
             match = pattern.search(stripped)

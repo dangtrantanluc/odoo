@@ -11,13 +11,16 @@ from datetime import date, timedelta
 from typing import Any
 
 from infrastructure.bbpm_client import BbPmClient
+from infrastructure.llm_client import LlmClient
+from reporting.risk.analyzer import RiskAnalyzer, format_risk_report
 from shared.text import normalize
 from tools import format as fmt
 
 
 class ToolCatalog:
-    def __init__(self, bbpm: BbPmClient) -> None:
+    def __init__(self, bbpm: BbPmClient, llm: LlmClient | None = None) -> None:
         self._bbpm = bbpm
+        self._risk = RiskAnalyzer(bbpm, llm)
 
     # ── query tools (return VN text) ────────────────────────────────────
     async def my_tasks_today(self, user_id: int) -> str:
@@ -76,6 +79,22 @@ class ToolCatalog:
         for a in autos:
             lines.append(f"• {a.get('name', '?')} — {a.get('workflow')} @ {a.get('schedule')}")
         return "\n".join(lines)
+
+    async def risk_snapshot(self, name: str) -> str:
+        """`/risk [tên project]` — phân tích rủi ro 1 dự án."""
+        target = name.strip()
+        if not target:
+            return ('Bạn cho mình biết tên dự án nhé. Ví dụ: "/risk BB-PM v2".')
+        projects = await self._bbpm.list_projects(q=target)
+        if not projects:
+            return f'Không tìm thấy dự án "{target}".'
+        q = normalize(target)
+        project = next(
+            (p for p in projects if normalize(p.get("name", "")) == q), projects[0]
+        )
+        report = await self._risk.analyze_project(int(project["id"]),
+                                                  with_narrative=False)
+        return format_risk_report(report)
 
     async def project_snapshot(self, name: str) -> str:
         projects = await self._bbpm.list_projects(q=name)
